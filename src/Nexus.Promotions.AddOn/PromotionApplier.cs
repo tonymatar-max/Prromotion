@@ -76,8 +76,10 @@ public sealed class PromotionApplier(Application app, ApiClient api, Settings se
         {
             // FR-38: the engine is down. Save without promotions (quotations/orders get re-evaluated by Mode B),
             // or stay on the form.
+            // A refusal for the wrong company (see CompanyGuard on the API) is explained as such, not as an outage.
+            var reason = ex is CompanyMismatchException ? ex.Message : $"The promotion engine could not be reached ({Short(ex)}).";
             var choice = app.MessageBox(
-                $"The promotion engine could not be reached ({Short(ex)}).\n\nSave without applying promotions?",
+                $"{reason}\n\nSave without applying promotions?",
                 2, "Save without promotions", "Cancel");
             if (choice != 1) return false;
             SetHeaderFields(form, "", header.GetValue("U_APE_Mode", 0).Trim(), "Pending", header.GetValue("U_APE_EvalAt", 0).Trim());

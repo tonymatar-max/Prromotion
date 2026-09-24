@@ -4,7 +4,8 @@ using Nexus.Promotions.B1;
 using Nexus.Promotions.Engine;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.Host.UseWindowsService(); // no-op when run from a console
+// A second company on the same machine runs its own copy under its own service name (Service:Name).
+builder.Host.UseWindowsService(o => o.ServiceName = builder.Configuration["Service:Name"] ?? "Nexus Promotions API"); // no-op from a console
 builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true).AddEnvironmentVariables("APE_");
 builder.Services.Configure<PromotionsOptions>(builder.Configuration.GetSection("Promotions"));
 builder.Services.Configure<ServiceLayerOptions>(builder.Configuration.GetSection("ServiceLayer"));
@@ -72,6 +73,24 @@ app.Use(async (ctx, next) =>
     {
         ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
         return;
+    }
+    await next();
+});
+
+// Company guard: an add-on names the company its B1 client is in; refuse rather than apply another company's promotions.
+app.Use(async (ctx, next) =>
+{
+    if (ctx.Request.Path.StartsWithSegments("/api") && ctx.Request.Headers.TryGetValue(CompanyGuard.Header, out var asked))
+    {
+        var serves = promotionsOptions.UsesServiceLayer
+            ? ctx.RequestServices.GetRequiredService<IOptions<ServiceLayerOptions>>().Value.CompanyDb
+            : null;
+        if (CompanyGuard.Check(serves, asked.ToString()) is { } problem)
+        {
+            ctx.Response.StatusCode = StatusCodes.Status409Conflict;
+            await ctx.Response.WriteAsJsonAsync(new { errors = new[] { problem }, serves });
+            return;
+        }
     }
     await next();
 });

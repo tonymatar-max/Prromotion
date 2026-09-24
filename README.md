@@ -13,7 +13,7 @@ the queue worker (Mode B, after save), POS and e-commerce. Requirements: the PRD
 | `src/Nexus.Promotions.B1` | Done: Service Layer client, UDO → promotion mapping, item/customer lookup, document re-evaluation and write-back plan, Mode B processor |
 | `src/Nexus.Promotions.Worker` | Done: Mode B worker (Windows service, or `once`); verified on SBODemoHO |
 | `src/Nexus.Promotions.AddOn` | Done, used in the B1 client on SBODemoHO: Mode A add-on (.NET Framework 4.8 x64, UI API); one exe that is also its own installer/uninstaller, ready for SAP registration (`.ard`) |
-| `tests/` | 60 tests: golden scenario per mechanic, rules, API, SQL against a compatibility-level-100 database |
+| `tests/` | 65 tests: golden scenario per mechanic, rules, API, SQL against a compatibility-level-100 database |
 | `sql/mssql` | Done: queue and settings tables, hash, validation (TransactionNotification), Mode B enqueue (PostTransactionNotice) |
 | `src/Nexus.Promotions.Setup` | Done: creates UDTs/UDFs/UDOs through the Service Layer, installs the SQL, hooks the notification procedures; installed and verified on SBODemoHO |
 | HANA version of the SQL | Next |
@@ -76,7 +76,8 @@ per machine. Three things make that work:
    was made, so build both together, every time:
 
    ```powershell
-   scripts\build-addon.ps1 -Version 1.1      # -> dist\addon\NexusPromotionsAddOn.exe and .ard
+   scripts\build-addon.ps1 -Version 1.1      # -> dist\addon\v1.1\NexusPromotionsAddOn.exe and .ard
+                                             #    (one folder per version: a running exe is locked by Windows)
    ```
 
    `New-AddOnArd.ps1` writes the same file as SAP's *Add-On Registration Data Generator* (verified byte for byte
@@ -86,7 +87,7 @@ per machine. Three things make that work:
    | --- | --- |
    | Partner name / Namespace / Contact | Nexus / Nex / Nexus |
    | Add-On name / Version | NexusPromotion / 1.0 (raise it for every release) |
-   | Add-On executable, Installer exe, Uninstaller exe | `dist\addon\NexusPromotionsAddOn.exe` (all three) |
+   | Add-On executable, Installer exe, Uninstaller exe | `dist\addon\v1.1\NexusPromotionsAddOn.exe` (all three) |
    | x64, Supported client type | ticked, Both |
    | Installer command line | empty |
    | Uninstaller command line arguments | `/U` |
@@ -109,6 +110,38 @@ Turn automatic apply-on-save off or on for every workstation at once with the sw
 
 Then, in the B1 client, register the `.ard` (Administration → Add-Ons → Add-On Administration; menu names vary a
 little between B1 versions) and assign it to the companies and users that should have it.
+
+## Several companies (also on the same workstation)
+
+The add-on itself needs nothing per company: B1 starts one copy per client, each copy reads its own company's
+documents, formats and `dbo.APE_Settings`, and `AppEvent aet_CompanyChanged` makes it exit so B1 starts it again for
+the company the user switched to. Register the `.ard` once and assign it to each company.
+
+What is per company is the **promotion server**: one API instance (and one worker) serves ONE company, because the
+promotions, item groups, price lists, customer groups and the hash key are that company's. Run a pair per company,
+each in its own folder (a copy of the published output) with its own settings, and point each company at its own
+server with `ApiUrl`:
+
+| | Company `SBODemoHO` | Company `SBODemoBr1` |
+| --- | --- | --- |
+| API `appsettings.Local.json` | `Urls` `http://0.0.0.0:5190`, `ServiceLayer:CompanyDb` `SBODemoHO`, `Sql:ConnectionString` → `SBODemoHO`, `Service:Name` `Nexus Promotions API HO` | `Urls` `http://0.0.0.0:5191`, `ServiceLayer:CompanyDb` `SBODemoBr1`, `Sql:ConnectionString` → `SBODemoBr1`, `Service:Name` `Nexus Promotions API Br1` |
+| Worker `appsettings.Local.json` | `ServiceLayer:CompanyDb`, `Worker:SqlConnectionString` → `SBODemoHO`, `Worker:ServiceName` `Nexus Promotions Worker HO` | same, for `SBODemoBr1` and `... Worker Br1` |
+| `dbo.APE_Settings` `ApiUrl` in that company | `http://promo-server:5190` | `http://promo-server:5191` |
+
+Run the Setup tool once per company by overriding its settings with environment variables (no file to edit):
+
+```powershell
+$env:APE_ServiceLayer__CompanyDb = "SBODemoBr1"
+$env:APE_Sql__ConnectionString   = "Server=localhost;Database=SBODemoBr1;Integrated Security=true;TrustServerCertificate=true"
+dotnet run --project src/Nexus.Promotions.Setup -- install
+dotnet run --project src/Nexus.Promotions.Setup -- setting ApiUrl http://promo-server:5191
+```
+
+**Wrong or missing `ApiUrl` cannot apply another company's promotions.** The add-on sends the name of the company
+its client is logged in to (`X-Company-Db`), and a server set up for a different company answers 409, which the add-on
+shows as "This promotion server is set up for company 'X', but the request comes from company 'Y'" with the usual
+*Save without applying promotions / Cancel* choice (a document saved that way is picked up by that company's worker).
+Requests without the header (the admin app in a browser, POS, integrations) are not checked.
 
 ## MS SQL install (per company database)
 

@@ -63,7 +63,7 @@ internal static class Program
 
         var settings = Settings.Load();
         CentralSettings.Fill(settings, _app!);
-        _applier = new PromotionApplier(_app, new ApiClient(settings), settings);
+        _applier = new PromotionApplier(_app, new ApiClient(settings, CompanyName(_app)), settings);
 
         SetFilters(_app);
         _app.ItemEvent += OnItemEvent;
@@ -73,6 +73,13 @@ internal static class Program
 
         System.Windows.Forms.Application.Run();
         return 0;
+    }
+
+    /// <summary>The database of the company this B1 client is logged in to; one add-on process runs per client.</summary>
+    static string? CompanyName(Application app)
+    {
+        try { return app.Company.DatabaseName; }
+        catch (Exception) { return null; } // an unnamed company just skips the check
     }
 
     /// <summary>Only the events and forms the add-on needs, so the B1 client is not slowed down.</summary>

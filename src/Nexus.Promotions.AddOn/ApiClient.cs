@@ -108,16 +108,19 @@ public sealed class NearMiss
     public string Message { get; set; } = "";
 }
 
-public sealed class ApiClient(Settings settings)
+/// <summary>The promotion server answered 409: it is set up for a different company than this B1 client is in.</summary>
+public sealed class CompanyMismatchException(string message) : Exception(message);
+
+public sealed class ApiClient(Settings settings, string? companyDb = null)
 {
     public static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 
-    readonly HttpClient _http = CreateHttp(settings);
+    readonly HttpClient _http = CreateHttp(settings, companyDb);
 
-    static HttpClient CreateHttp(Settings s)
+    static HttpClient CreateHttp(Settings s, string? company)
     {
         var http = new HttpClient
         {
@@ -125,6 +128,8 @@ public sealed class ApiClient(Settings settings)
             Timeout = TimeSpan.FromSeconds(Math.Max(1, s.TimeoutSeconds)),
         };
         if (!string.IsNullOrEmpty(s.ApiKey)) http.DefaultRequestHeaders.Add("X-Api-Key", s.ApiKey);
+        // Which company this B1 client is logged in to, so a server set up for another company refuses instead of answering.
+        if (!string.IsNullOrWhiteSpace(company)) http.DefaultRequestHeaders.Add("X-Company-Db", Uri.EscapeDataString(company));
         return http;
     }
 
@@ -150,6 +155,16 @@ public sealed class ApiClient(Settings settings)
             }
         }).GetAwaiter().GetResult();
 
+    static string FirstError(string json)
+    {
+        try
+        {
+            var errors = JsonSerializer.Deserialize<JsonElement>(json).GetProperty("errors");
+            return errors[0].GetString() ?? json;
+        }
+        catch (Exception) { return json; }
+    }
+
     /// <summary>Blocking call for the UI thread; runs on the thread pool so it cannot deadlock the B1 message loop.</summary>
     public DocumentEvaluation Evaluate(DocumentInput document) =>
         Task.Run(async () =>
@@ -157,6 +172,7 @@ public sealed class ApiClient(Settings settings)
             var body = new StringContent(JsonSerializer.Serialize(document, Json), Encoding.UTF8, "application/json");
             using var res = await _http.PostAsync("api/v1/documents/evaluate", body).ConfigureAwait(false);
             var text = await res.Content.ReadAsStringAsync().ConfigureAwait(false);
+            if ((int)res.StatusCode == 409) throw new CompanyMismatchException(FirstError(text));
             if (!res.IsSuccessStatusCode)
                 throw new InvalidOperationException($"Promotion API returned HTTP {(int)res.StatusCode}: {text}");
             return JsonSerializer.Deserialize<DocumentEvaluation>(text, Json)
