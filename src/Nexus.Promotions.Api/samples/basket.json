@@ -1,0 +1,17 @@
+{
+  "documentType": "ORDR",
+  "channel": "B1",
+  "cardCode": "C20000",
+  "customerGroup": "Retail",
+  "amountDecimals": 3,
+  "coupons": ["RAMADAN10"],
+  "lines": [
+    { "lineNum": 0, "itemCode": "SH-400", "quantity": 7, "unitPrice": 1.950 },
+    { "lineNum": 1, "itemCode": "N-CREAM", "quantity": 2, "unitPrice": 2.750 },
+    { "lineNum": 2, "itemCode": "PH-X1", "quantity": 1, "unitPrice": 199.000 },
+    { "lineNum": 3, "itemCode": "CASE-X1", "quantity": 1, "unitPrice": 9.000 },
+    { "lineNum": 4, "itemCode": "CHIPS", "quantity": 2, "unitPrice": 0.450 },
+    { "lineNum": 5, "itemCode": "NUTS", "quantity": 2, "unitPrice": 0.400 },
+    { "lineNum": 6, "itemCode": "COLA15", "quantity": 6, "unitPrice": 0.650 }
+  ]
+}

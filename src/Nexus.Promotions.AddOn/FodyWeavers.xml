@@ -1,0 +1,4 @@
+<Weavers xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="FodyWeavers.xsd">
+  <!-- B1 distributes only the files the .ard lists (the exe), so every dependency is embedded in it. -->
+  <Costura />
+</Weavers>

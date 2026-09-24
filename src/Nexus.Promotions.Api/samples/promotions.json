@@ -1,0 +1,80 @@
+[
+  {
+    "code": "NIVEA15",
+    "name": "15% off all Nivea",
+    "nameAr": "خصم 15% على جميع منتجات نيفيا",
+    "type": "ItemDiscount",
+    "priority": 50,
+    "scope": { "manufacturers": ["NIVEA"] },
+    "rewardKind": "PercentOff",
+    "rewardValue": 15
+  },
+  {
+    "code": "COLA-PRICE",
+    "name": "Cola 1.5 L at 0.500",
+    "type": "FixedPrice",
+    "priority": 40,
+    "scope": { "itemCodes": ["COLA15"] },
+    "rewardValue": 0.500
+  },
+  {
+    "code": "SHAMPOO-TIER",
+    "name": "Shampoo: 6+ pcs 8%, 12+ pcs 12%",
+    "type": "QuantityTier",
+    "priority": 60,
+    "scope": { "itemGroups": ["SHAMPOO"] },
+    "rewardKind": "PercentOff",
+    "tiers": [ { "from": 1, "value": 5 }, { "from": 6, "value": 8 }, { "from": 12, "value": 12 } ]
+  },
+  {
+    "code": "SHAMPOO-B2G1",
+    "name": "Buy 2 shampoo, get 1 free",
+    "type": "BuyXGetXFree",
+    "priority": 20,
+    "scope": { "itemGroups": ["SHAMPOO"] },
+    "buyQuantity": 2,
+    "getQuantity": 1,
+    "maxApplicationsPerDocument": 3
+  },
+  {
+    "code": "PHONE-CASE",
+    "name": "Buy a phone, case at 50%",
+    "type": "BuyXGetY",
+    "priority": 30,
+    "scope": { "itemGroups": ["PHONES"] },
+    "buyQuantity": 1,
+    "getQuantity": 1,
+    "rewardScope": { "itemGroups": ["CASES"] },
+    "rewardKind": "PercentOff",
+    "rewardValue": 50
+  },
+  {
+    "code": "SNACK3",
+    "name": "Any 3 snacks for 1.000",
+    "type": "MixAndMatch",
+    "priority": 35,
+    "scope": { "itemGroups": ["SNACK"] },
+    "buyQuantity": 3,
+    "rewardKind": "FixedPrice",
+    "rewardValue": 1.000
+  },
+  {
+    "code": "SPEND50",
+    "name": "Spend 50, get 5%; spend 100, get 10%",
+    "type": "BasketThreshold",
+    "priority": 90,
+    "rewardKind": "PercentOff",
+    "tiers": [ { "from": 50, "value": 5 }, { "from": 100, "value": 10 } ],
+    "maxDiscountPerDocument": 25
+  },
+  {
+    "code": "RAMADAN10",
+    "name": "Coupon RAMADAN10: 10% off",
+    "type": "ItemDiscount",
+    "priority": 80,
+    "couponCode": "RAMADAN10",
+    "rewardKind": "PercentOff",
+    "rewardValue": 10,
+    "budgetRemaining": 5000
+  }
+]

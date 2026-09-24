@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nexus Promotions</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand-mark"><span class="brand-node"></span></div>
+    <div class="product-title"><strong>Nexus</strong><span class="product-sub">Promotions</span></div>
+    <span id="company" class="company-chip" hidden></span>
+  </header>
+
+  <div class="shell">
+    <nav class="sidebar">
+      <div class="nav-label">Promotions</div>
+      <button class="nav-item active" data-view="list">All promotions</button>
+      <button class="nav-item" data-view="new">New promotion</button>
+      <div class="nav-label">Tools</div>
+      <button class="nav-item" data-view="simulator">Simulator</button>
+    </nav>
+
+    <main id="main"></main>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+[
+  { "itemCode": "N-CREAM", "itemGroup": "SKINCARE", "manufacturer": "NIVEA", "unitPrice": 2.750 },
+  { "itemCode": "SH-400", "itemGroup": "SHAMPOO", "manufacturer": "HS", "unitPrice": 1.950 },
+  { "itemCode": "COLA15", "itemGroup": "DRINKS", "unitPrice": 0.650 },
+  { "itemCode": "PH-X1", "itemGroup": "PHONES", "unitPrice": 199.000 },
+  { "itemCode": "CASE-X1", "itemGroup": "CASES", "unitPrice": 9.000 },
+  { "itemCode": "CHIPS", "itemGroup": "SNACK", "unitPrice": 0.450 },
+  { "itemCode": "NUTS", "itemGroup": "SNACK", "unitPrice": 0.400 },
+  { "itemCode": "TOTE", "itemGroup": "GIFTS", "unitPrice": 1.500 }
+]

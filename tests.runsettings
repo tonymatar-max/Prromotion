@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Test assemblies run one at a time: the engine performance test (NFR-01) measures wall-clock time,
+     and parallel assemblies plus the SQL tests' database work skew it several-fold. -->
+<RunSettings>
+  <RunConfiguration>
+    <MaxCpuCount>1</MaxCpuCount>
+  </RunConfiguration>
+</RunSettings>
