@@ -493,3 +493,4 @@ api.out.log
 api.err.log
 diag.txt
 NexusPromotionsAddOn.log
+src/**/companies.json

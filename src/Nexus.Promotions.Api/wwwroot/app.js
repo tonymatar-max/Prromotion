@@ -129,6 +129,7 @@ async function route() {
   const h = decodeURIComponent(location.hash.slice(1));
   if (h === "new") return editor(null);
   if (h === "simulator") return simulator();
+  if (h === "settings") return settings();
   if (h.startsWith("edit/")) return editor(h.slice(5));
   return list();
 }
@@ -643,3 +644,46 @@ async function simulator() {
   } catch { /* the list shows the error */ }
   route();
 })();
+
+// ── settings: the companies this server serves ───────────────────────────
+async function settings() {
+  setNav("settings");
+  main.innerHTML = `<div class="page-head"><h1>Settings</h1></div><div class="panel"><div class="empty">Loading…</div></div>`;
+  let rows;
+  try { rows = (await call("/settings/companies")).companies; }
+  catch (e) { main.innerHTML = `<div class="alert error">Could not load settings: ${esc(e.message)}</div>`; return; }
+  rows = rows.map(r => ({ ...r, password: "" }));
+
+  const draw = () => {
+    main.innerHTML = `
+      <div class="page-head"><h1>Settings</h1></div>
+      <section class="panel"><h2>Companies<span class="sub">the B1 companies this server serves</span></h2><div class="body">
+        <p class="hint">Promotions are defined once, in the master company, then ticked per company. Database name is the B1 company database exactly as it appears in B1. Changes apply when the API is restarted.</p>
+        <table class="table"><thead><tr><th>Database</th><th>Name</th><th>Master</th><th>Service Layer user</th><th>Password</th><th>SQL connection (for auto-apply)</th><th></th></tr></thead><tbody>
+          ${rows.map((r, i) => `<tr>
+            <td><input data-f="db" data-i="${i}" value="${esc(r.db)}" placeholder="SBODemoBr1"></td>
+            <td><input data-f="name" data-i="${i}" value="${esc(r.name ?? "")}" placeholder="Branch 1"></td>
+            <td><input type="radio" name="master" data-i="${i}" ${r.master ? "checked" : ""}></td>
+            <td><input data-f="user" data-i="${i}" value="${esc(r.user ?? "")}" placeholder="same as default"></td>
+            <td><input type="password" data-f="password" data-i="${i}" value="${esc(r.password)}" placeholder="${r.hasPassword ? "saved: leave blank to keep" : "same as default"}"></td>
+            <td><input data-f="sqlConnectionString" data-i="${i}" value="${esc(r.sqlConnectionString ?? "")}" placeholder="Server=...;Database=...;Integrated Security=true"></td>
+            <td><button class="link" data-del="${i}">Remove</button></td></tr>`).join("")}
+        </tbody></table>
+        <div style="display:flex;gap:8px;margin-top:10px"><button id="add-company">Add company</button><span class="spacer"></span><button class="primary" id="save-companies">Save</button></div>
+        <div id="settings-msg"></div>
+      </div></section>`;
+    main.querySelectorAll("input[data-f]").forEach(el => el.addEventListener("input", () => { rows[el.dataset.i][el.dataset.f] = el.value; }));
+    main.querySelectorAll("input[name=master]").forEach(el => el.addEventListener("change", () => rows.forEach((r, i) => r.master = i === +el.dataset.i)));
+    main.querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", () => { rows.splice(+b.dataset.del, 1); draw(); }));
+    main.querySelector("#add-company").addEventListener("click", () => { rows.push({ db: "", name: "", master: rows.length === 0, user: "", password: "", sqlConnectionString: "" }); draw(); });
+    main.querySelector("#save-companies").addEventListener("click", async () => {
+      const msg = main.querySelector("#settings-msg");
+      try {
+        const body = rows.map(r => ({ db: r.db, name: r.name, master: !!r.master, user: r.user, password: r.password, sqlConnectionString: r.sqlConnectionString }));
+        await call("/settings/companies", { method: "PUT", body: JSON.stringify(body) });
+        msg.innerHTML = `<div class="alert note" style="margin-top:10px">Saved. Restart the promotion API for the change to take effect.</div>`;
+      } catch (e) { msg.innerHTML = `<div class="alert error" style="margin-top:10px">${esc(e.errors.join(" "))}</div>`; }
+    });
+  };
+  draw();
+}

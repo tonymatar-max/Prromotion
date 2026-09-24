@@ -16,7 +16,9 @@ var promotionsOptions = builder.Configuration.GetSection("Promotions").Get<Promo
 // The companies this server serves. Promotions are defined once in the master company and ticked per company; each
 // company is evaluated with its own item, customer and price data. Without a "Companies" section there is one company
 // (ServiceLayer:CompanyDb) and everything behaves as it did before several companies were supported.
-var configuredCompanies = builder.Configuration.GetSection("Companies").Get<List<CompanyOptions>>() ?? [];
+var companyFile = new CompanySettingsFile(Path.Combine(builder.Environment.ContentRootPath, "companies.json"));
+var configuredCompanies = companyFile.Load() ?? builder.Configuration.GetSection("Companies").Get<List<CompanyOptions>>() ?? [];
+builder.Services.AddSingleton(companyFile);
 var registry = CompanyRegistry.Build(
     configuredCompanies,
     builder.Configuration.GetSection("ServiceLayer").Get<ServiceLayerOptions>() ?? new ServiceLayerOptions(),
@@ -187,6 +189,25 @@ admin.MapPost("/mode-a", (ModeAChange change, HttpContext ctx, CompanyRegistry r
     if (!target.Settings.Configured) return Results.BadRequest(new { errors = new[] { $"No SQL connection configured for company {target.Db}." } });
     target.Settings.ModeAEnabled = change.Enabled;
     return Results.Ok(new { company = target.Db, modeAEnabled = target.Settings.ModeAEnabled });
+});
+
+// Settings > Companies: the list this server serves, edited in the admin app and saved to companies.json.
+// It is read when the API starts, so a change applies after the API is restarted.
+admin.MapGet("/settings/companies", (CompanySettingsFile file, CompanyRegistry reg) =>
+    Results.Ok(new
+    {
+        companies = (file.Load() ?? reg.All.Select(c => new CompanyOptions { Db = c.Db, Name = c.Name, Master = c.IsMaster }).ToList())
+            .Select(CompanySettingsFile.Redact),
+        fromFile = file.Exists,
+    }));
+
+admin.MapPut("/settings/companies", (List<CompanyOptions> incoming, CompanySettingsFile file, CompanyRegistry reg) =>
+{
+    var errors = CompanySettingsFile.Validate(incoming);
+    if (errors.Count > 0) return Results.BadRequest(new { errors });
+    var current = file.Load() ?? reg.All.Select(c => new CompanyOptions { Db = c.Db, Name = c.Name, Master = c.IsMaster }).ToList();
+    file.Save(incoming, current);
+    return Results.Ok(new { saved = true, restartRequired = true });
 });
 
 admin.MapGet("/promotions", async (CompanyRegistry reg, PromotionStore store, CancellationToken ct) =>

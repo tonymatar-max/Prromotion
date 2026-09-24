@@ -121,7 +121,7 @@ little between B1 versions) and assign it to the companies and users that should
 
 ## Several companies (also on the same workstation)
 
-One promotion server serves all companies. Promotions are defined once, in a **master company**, and each promotion ticks the companies it applies to (step "Companies" in the admin app; none ticked = master only). Every company is evaluated with its own items, customers and price lists.
+One promotion server serves all companies. Add them in the admin app under **Settings > Companies** (saved to `companies.json`, applied on the next API restart; passwords are never shown back). Promotions are defined once, in a **master company**, and each promotion ticks the companies it applies to (step "Companies" in the admin app; none ticked = master only). Every company is evaluated with its own items, customers and price lists.
 
 ```json
 "Companies": [
