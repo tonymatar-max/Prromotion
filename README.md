@@ -106,6 +106,13 @@ per machine. Three things make that work:
    then `http://localhost:5190`. The API must listen on an address the workstations can reach
    (`"Urls": "http://0.0.0.0:5190"` in its `appsettings.json`, and the firewall open on that port).
 
+**Speed and diagnostics.** B1 waits for the add-on on every event, and every call from the add-on into B1 crosses a
+process boundary (about 15 ms for `Items`, `Columns` and `Cells`; 0.25 ms for `DBDataSource.GetValue`). A Sales Order
+has about 800 items, so never loop over `form.Items` (an earlier version did, and held every form open for 14–18 s).
+`NexusPromotionsAddOn.exe --bench` (run from a folder you can write to, with a B1 client open) times these calls on the
+open sales forms without changing anything. The add-on log is per user, `%LOCALAPPDATA%\Nexus\PromotionsAddOn\`, and
+records the time of every save (read / engine / write) and any event that took over 300 ms.
+
 Turn automatic apply-on-save off or on for every workstation at once with the switch at the top of the admin app
 (`dbo.APE_Settings` `ModeA`); the **Apply Promotions** button always still works.
 

@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using SAPbouiCOM;
@@ -38,10 +39,11 @@ internal static class Program
     static int Run(string[] args)
     {
         var diag = args.Length > 0 && args[0] == "--diag";
+        var bench = args.Length > 0 && args[0] == "--bench";
         try
         {
             var gui = new SboGuiApi();
-            gui.Connect(args.Length > 0 && !diag ? args[0] : DevelopmentConnection);
+            gui.Connect(args.Length > 0 && !diag && !bench ? args[0] : DevelopmentConnection);
             _app = gui.GetApplication(-1);
         }
         catch (COMException ex)
@@ -51,6 +53,12 @@ internal static class Program
                 + "Open the B1 client, log in to a company, then run this add-on again.\n\n" + ex.Message,
                 "Nexus Promotions", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
             return 1;
+        }
+
+        if (bench)
+        {
+            File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "bench.txt"), Diagnostics.Bench(_app!));
+            return 0;
         }
 
         if (diag)
@@ -97,6 +105,7 @@ internal static class Program
     static void OnItemEvent(string formUid, ref ItemEvent e, out bool bubble)
     {
         bubble = true;
+        var clock = Stopwatch.StartNew();
         try
         {
             if (!PromotionApplier.Forms.ContainsKey(e.FormTypeEx)) return;
@@ -117,6 +126,12 @@ internal static class Program
             // Never block the user's document because of an add-on error; report it and let B1 continue.
             Diagnostics.Log(ex.ToString());
             _app?.StatusBar.SetText("Nexus Promotions: " + ex.Message, BoMessageTime.bmt_Medium, BoStatusBarMessageType.smt_Error);
+        }
+        finally
+        {
+            // B1 waits for the add-on on every event, so anything slow here is a slow B1: name it in the log.
+            if (clock.ElapsedMilliseconds > 300)
+                Diagnostics.Log($"Slow event {e.EventType} on form {e.FormTypeEx} item '{e.ItemUID}': {clock.ElapsedMilliseconds} ms");
         }
     }
 

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using SAPbouiCOM;
@@ -62,10 +63,12 @@ public sealed class PromotionApplier(Application app, ApiClient api, Settings se
         if (onSave && !api.IsModeAEnabled()) return true;
         LoadCompanyFormats();
 
+        var clock = Stopwatch.StartNew();
         var matrix = (Matrix)form.Items.Item(MatrixId).Specific;
         var lines = form.DataSources.DBDataSources.Item(tables.Lines);
         var input = ReadDocument(tables.ObjectTable, header, lines);
         if (input.Lines.Count == 0) return true;
+        var readMs = clock.ElapsedMilliseconds;
 
         DocumentEvaluation evaluation;
         try
@@ -86,6 +89,7 @@ public sealed class PromotionApplier(Application app, ApiClient api, Settings se
             return true;
         }
 
+        var engineMs = clock.ElapsedMilliseconds - readMs;
         var storedHash = header.GetValue("U_APE_Hash", 0).Trim();
         Diagnostics.Log($"Apply form={form.TypeEx} mode={form.Mode} onSave={onSave} lines={input.Lines.Count} changed={evaluation.Changed} "
             + $"storedHash='{storedHash}' newHash={evaluation.Result.Hash.Substring(0, 12)}…");
@@ -97,6 +101,7 @@ public sealed class PromotionApplier(Application app, ApiClient api, Settings se
 
         _busy = true;
         form.Freeze(true);
+        var writeStart = clock.ElapsedMilliseconds;
         try
         {
             WriteBack(form, matrix, header, evaluation);
@@ -106,6 +111,8 @@ public sealed class PromotionApplier(Application app, ApiClient api, Settings se
             form.Freeze(false);
             _busy = false;
         }
+        // Where the time goes on a save: reading the document, the promotion API, writing the result into B1.
+        Diagnostics.Log($"  timings: read {readMs} ms, engine {engineMs} ms, write {clock.ElapsedMilliseconds - writeStart} ms");
 
         var summary = Summary(evaluation);
         if (onSave && settings.ConfirmOnSave && evaluation.Changed)
@@ -305,11 +312,15 @@ public sealed class PromotionApplier(Application app, ApiClient api, Settings se
         _amountDecimals = Convert.ToInt32(rs.Fields.Item("SumDec").Value);
     }
 
-    static bool ItemExists(Form form, string id)
+    /// <summary>
+    /// One lookup by id. Never loop over form.Items: a Sales Order has about 800 items, every call into B1 crosses a
+    /// process boundary (~15 ms), and B1 waits for the add-on during the form-load event. The loop this replaced
+    /// held the form for 14 seconds on every open (measured with the --bench mode).
+    /// </summary>
+    internal static bool ItemExists(Form form, string id)
     {
-        for (int i = 0; i < form.Items.Count; i++)
-            if (form.Items.Item(i).UniqueID == id) return true;
-        return false;
+        try { _ = form.Items.Item(id); return true; }
+        catch (System.Runtime.InteropServices.COMException) { return false; }
     }
 
     static string? NullIfEmpty(string s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
