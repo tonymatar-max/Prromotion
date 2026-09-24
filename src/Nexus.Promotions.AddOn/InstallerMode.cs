@@ -119,17 +119,45 @@ internal static class InstallerMode
             // The export is overridable only so the plumbing can be tested against a harmless system dll.
             var export = Environment.GetEnvironmentVariable("APE_INSTALL_API_EXPORT") ?? "EndInstall";
             Environment.CurrentDirectory = Path.GetDirectoryName(dllPath) ?? Environment.CurrentDirectory;
-            var module = LoadLibrary(dllPath);
-            if (module == IntPtr.Zero) { Log($"LoadLibrary failed ({Marshal.GetLastWin32Error()}): {dllPath}"); return 1; }
-            var proc = GetProcAddress(module, export);
-            if (proc == IntPtr.Zero) { Log($"Export {export} not found in {dllPath}"); return 1; }
-            return ((EndInstallFunction)Marshal.GetDelegateForFunctionPointer(proc, typeof(EndInstallFunction)))();
+
+            foreach (var candidate in Candidates(dllPath))
+            {
+                var module = LoadLibrary(candidate);
+                if (module == IntPtr.Zero)
+                {
+                    // 193 = a 32-bit dll cannot be loaded into this 64-bit process.
+                    Log($"LoadLibrary failed ({Marshal.GetLastWin32Error()}): {candidate}");
+                    continue;
+                }
+                var proc = GetProcAddress(module, export);
+                if (proc == IntPtr.Zero) { Log($"Export {export} not found in {candidate}"); continue; }
+                Log($"Calling {export} in {candidate}");
+                return ((EndInstallFunction)Marshal.GetDelegateForFunctionPointer(proc, typeof(EndInstallFunction)))();
+            }
+            return 1;
         }
         catch (Exception ex)
         {
             Log("EndInstall failed: " + ex);
             return 1;
         }
+    }
+
+    /// <summary>
+    /// B1 passes the path of the 32-bit AddOnInstallAPI.dll even to a 64-bit installer (seen in a real install:
+    /// LoadLibrary error 193), and ships the 64-bit one beside it as AddOnInstallAPI_x64.dll. A 64-bit process
+    /// therefore tries the _x64 sibling first, then the path exactly as given.
+    /// </summary>
+    static System.Collections.Generic.IEnumerable<string> Candidates(string dllPath)
+    {
+        if (Environment.Is64BitProcess)
+        {
+            var folder = Path.GetDirectoryName(dllPath) ?? "";
+            var name = Path.GetFileNameWithoutExtension(dllPath);
+            if (!name.EndsWith("_x64", StringComparison.OrdinalIgnoreCase))
+                yield return Path.Combine(folder, name + "_x64.dll");
+        }
+        yield return dllPath;
     }
 
     static void Log(string message)

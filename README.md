@@ -70,13 +70,14 @@ per machine. Three things make that work:
 1. **One exe does everything.** B1 distributes only the files an `.ard` names, so `NexusPromotionsAddOn.exe` is the
    add-on, the installer and the uninstaller in one file, with its dependencies embedded (Costura.Fody).
    B1 runs the installer as `exe "installFolder|...\AddOnInstallAPI.dll"`; the exe copies itself into that folder and
-   calls `EndInstall()`. B1 runs the uninstaller as `exe /U`. Details: `InstallerMode.cs`. An installer run by B1
+   calls `EndInstall()` (B1 hands over the path of the 32-bit `AddOnInstallAPI.dll` even to this 64-bit exe, so it
+   loads the `_x64` sibling first). B1 runs the uninstaller as `exe /U`. Details: `InstallerMode.cs`. An installer run by B1
    has no window, so it logs to `%TEMP%\NexusPromotionsAddOn.install.log`.
 2. **The `.ard` carries the MD5 and SHA-256 of the exe.** B1 rejects an add-on whose exe changed after the `.ard`
    was made, so build both together, every time:
 
    ```powershell
-   scripts\build-addon.ps1 -Version 1.1      # -> dist\addon\v1.1\NexusPromotionsAddOn.exe and .ard
+   scripts\build-addon.ps1 -Version 1.2      # -> dist\addon\v1.2\NexusPromotionsAddOn.exe and .ard
                                              #    (one folder per version: a running exe is locked by Windows)
    ```
 
@@ -87,7 +88,7 @@ per machine. Three things make that work:
    | --- | --- |
    | Partner name / Namespace / Contact | Nexus / Nex / Nexus |
    | Add-On name / Version | NexusPromotion / 1.0 (raise it for every release) |
-   | Add-On executable, Installer exe, Uninstaller exe | `dist\addon\v1.1\NexusPromotionsAddOn.exe` (all three) |
+   | Add-On executable, Installer exe, Uninstaller exe | `dist\addon\v<version>\NexusPromotionsAddOn.exe` (all three) |
    | x64, Supported client type | ticked, Both |
    | Installer command line | empty |
    | Uninstaller command line arguments | `/U` |
