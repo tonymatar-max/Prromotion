@@ -22,6 +22,9 @@ USING (VALUES
     (N'ModeA',        N'Y'),    -- Y: the add-on auto-applies promotions on Add/Update, on every workstation at once.
                                  -- N: the Apply Promotions button still works, but nothing fires automatically on save.
                                  -- Toggle from the admin app instead of editing each workstation.
+    (N'CentralPromotions', NULL), -- Y in a company whose promotions live in ANOTHER (master) company: its own @APE_PROMO is then not
+                                 -- the list of valid codes, so validation 71005 (unknown promotion code) is skipped there. Leave blank
+                                 -- in the master company and in a company with its own promotions.
     (N'ApiUrl',       NULL),    -- where the promotion API runs, e.g. http://promo-server:5190 — read by every
                                  -- workstation's add-on, so nothing is configured per machine (set with the Setup
                                  -- tool: "setting ApiUrl http://promo-server:5190"). Blank: http://localhost:5190

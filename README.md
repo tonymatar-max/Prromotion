@@ -121,35 +121,20 @@ little between B1 versions) and assign it to the companies and users that should
 
 ## Several companies (also on the same workstation)
 
-The add-on itself needs nothing per company: B1 starts one copy per client, each copy reads its own company's
-documents, formats and `dbo.APE_Settings`, and `AppEvent aet_CompanyChanged` makes it exit so B1 starts it again for
-the company the user switched to. Register the `.ard` once and assign it to each company.
+One promotion server serves all companies. Promotions are defined once, in a **master company**, and each promotion ticks the companies it applies to (step "Companies" in the admin app; none ticked = master only). Every company is evaluated with its own items, customers and price lists.
 
-What is per company is the **promotion server**: one API instance (and one worker) serves ONE company, because the
-promotions, item groups, price lists, customer groups and the hash key are that company's. Run a pair per company,
-each in its own folder (a copy of the published output) with its own settings, and point each company at its own
-server with `ApiUrl`:
-
-| | Company `SBODemoHO` | Company `SBODemoBr1` |
-| --- | --- | --- |
-| API `appsettings.Local.json` | `Urls` `http://0.0.0.0:5190`, `ServiceLayer:CompanyDb` `SBODemoHO`, `Sql:ConnectionString` → `SBODemoHO`, `Service:Name` `Nexus Promotions API HO` | `Urls` `http://0.0.0.0:5191`, `ServiceLayer:CompanyDb` `SBODemoBr1`, `Sql:ConnectionString` → `SBODemoBr1`, `Service:Name` `Nexus Promotions API Br1` |
-| Worker `appsettings.Local.json` | `ServiceLayer:CompanyDb`, `Worker:SqlConnectionString` → `SBODemoHO`, `Worker:ServiceName` `Nexus Promotions Worker HO` | same, for `SBODemoBr1` and `... Worker Br1` |
-| `dbo.APE_Settings` `ApiUrl` in that company | `http://promo-server:5190` | `http://promo-server:5191` |
-
-Run the Setup tool once per company by overriding its settings with environment variables (no file to edit):
-
-```powershell
-$env:APE_ServiceLayer__CompanyDb = "SBODemoBr1"
-$env:APE_Sql__ConnectionString   = "Server=localhost;Database=SBODemoBr1;Integrated Security=true;TrustServerCertificate=true"
-dotnet run --project src/Nexus.Promotions.Setup -- install
-dotnet run --project src/Nexus.Promotions.Setup -- setting ApiUrl http://promo-server:5191
+```json
+"Companies": [
+  { "Db": "SBODemoHO",  "Name": "Head Office", "Master": true, "SqlConnectionString": "..." },
+  { "Db": "SBODemoBr1", "Name": "Branch 1",    "SqlConnectionString": "..." }
+]
 ```
 
-**Wrong or missing `ApiUrl` cannot apply another company's promotions.** The add-on sends the name of the company
-its client is logged in to (`X-Company-Db`), and a server set up for a different company answers 409, which the add-on
-shows as "This promotion server is set up for company 'X', but the request comes from company 'Y'" with the usual
-*Save without applying promotions / Cancel* choice (a document saved that way is picked up by that company's worker).
-Requests without the header (the admin app in a browser, POS, integrations) are not checked.
+- Each add-on sends its company in `X-Company-Db`; the server answers with that company's promotions and refuses a company it does not serve.
+- In every non-master company run `setting CentralPromotions Y` (promotions are not read from that company's own tables) and give its Mode B worker `Engine:Url` plus its own `ServiceLayer:CompanyDb`. Each company keeps its own hash key.
+- The admin app shows per-company Auto-apply switches (`/mode-a` with `company`), and the Simulator/Try it has a company selector.
+- Item-group, manufacturer and item-property numbers are per company. Saving a promotion that ticks other companies runs a check and lists items, groups and customer groups that do not match there; it is a warning, not a block.
+- Two companies on one workstation: the add-on picks the server by company, so both work side by side; a second Mode B worker needs its own `Worker:ServiceName`.
 
 ## MS SQL install (per company database)
 

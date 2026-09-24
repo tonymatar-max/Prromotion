@@ -7,7 +7,7 @@
 --   Stored hash = recomputed hash: fresh evaluation, then line checks:
 --     71003  free line without 100% discount
 --     71004  DiscPrcnt does not match U_APE_DiscAmt
---     71005  unknown promotion code
+--     71005  unknown promotion code (skipped when APE_Settings 'CentralPromotions' = Y: the codes live in another company)
 --   Hash differs (or is missing): allowed only when every promotion line was copied from a base document
 --   unchanged (partial quantities are fine, FR-18):
 --     71002  a promotion line typed or changed on this document
@@ -170,8 +170,9 @@ BEGIN
         RETURN;
     END
 
-    -- 71005: every promotion code exists in the @APE_PROMO UDO.
+    -- 71005: every promotion code exists in the @APE_PROMO UDO. Not in a company whose promotions live in a master company.
     IF OBJECT_ID(N'dbo.[@APE_PROMO]', N'U') IS NOT NULL
+       AND ISNULL((SELECT Value FROM dbo.APE_Settings WHERE Name = N'CentralPromotions'), N'N') <> N'Y'
     BEGIN
         WITH Codes (Row, Code, Rest) AS
         (

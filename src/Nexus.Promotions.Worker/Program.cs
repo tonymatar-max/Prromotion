@@ -42,6 +42,10 @@ else
     {
         http.BaseAddress = new Uri(engineUrl.TrimEnd('/') + "/");
         if (builder.Configuration["Engine:ApiKey"] is { Length: > 0 } key) http.DefaultRequestHeaders.Add("X-Api-Key", key);
+        // Which company this worker belongs to: a server that serves several answers each with that company's own
+        // promotions and item data, and refuses a company it does not serve.
+        if (builder.Configuration["ServiceLayer:CompanyDb"] is { Length: > 0 } company)
+            http.DefaultRequestHeaders.Add("X-Company-Db", Uri.EscapeDataString(company));
     });
 }
 

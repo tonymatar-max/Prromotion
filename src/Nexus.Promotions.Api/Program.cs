@@ -4,7 +4,7 @@ using Nexus.Promotions.B1;
 using Nexus.Promotions.Engine;
 
 var builder = WebApplication.CreateBuilder(args);
-// A second company on the same machine runs its own copy under its own service name (Service:Name).
+// A second server on the same machine runs its own copy under its own service name (Service:Name).
 builder.Host.UseWindowsService(o => o.ServiceName = builder.Configuration["Service:Name"] ?? "Nexus Promotions API"); // no-op from a console
 builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true).AddEnvironmentVariables("APE_");
 builder.Services.Configure<PromotionsOptions>(builder.Configuration.GetSection("Promotions"));
@@ -12,21 +12,24 @@ builder.Services.Configure<ServiceLayerOptions>(builder.Configuration.GetSection
 builder.Services.ConfigureHttpJsonOptions(o => Json.Configure(o.SerializerOptions));
 
 var promotionsOptions = builder.Configuration.GetSection("Promotions").Get<PromotionsOptions>() ?? new PromotionsOptions();
+
+// The companies this server serves. Promotions are defined once in the master company and ticked per company; each
+// company is evaluated with its own item, customer and price data. Without a "Companies" section there is one company
+// (ServiceLayer:CompanyDb) and everything behaves as it did before several companies were supported.
+var configuredCompanies = builder.Configuration.GetSection("Companies").Get<List<CompanyOptions>>() ?? [];
+var registry = CompanyRegistry.Build(
+    configuredCompanies,
+    builder.Configuration.GetSection("ServiceLayer").Get<ServiceLayerOptions>() ?? new ServiceLayerOptions(),
+    builder.Configuration["Sql:ConnectionString"],
+    promotionsOptions.HashKey,
+    promotionsOptions.UsesServiceLayer);
+builder.Services.AddSingleton(registry);
+
 if (promotionsOptions.UsesServiceLayer)
-{
-    builder.Services.AddSingleton(sp => new ServiceLayer(sp.GetRequiredService<IOptions<ServiceLayerOptions>>().Value));
-    builder.Services.AddSingleton(sp => new B1MasterData(sp.GetRequiredService<ServiceLayer>(),
-        sp.GetRequiredService<IOptions<ServiceLayerOptions>>().Value.PriceList));
-    builder.Services.AddSingleton<IPromotionSource, ServiceLayerPromotionSource>();
-    builder.Services.AddSingleton(sp => new PromotionAdmin(sp.GetRequiredService<ServiceLayer>()));
-}
+    builder.Services.AddSingleton<IPromotionSource>(new ServiceLayerPromotionSource(registry.Master.ServiceLayer!, registry.Master.MasterData!));
 else
-{
     builder.Services.AddSingleton<IPromotionSource, FilePromotionSource>();
-}
-// dbo.APE_Settings: one central switch (ModeA) that reaches every workstation running the add-on at once,
-// instead of a setting that would have to be changed machine by machine.
-builder.Services.AddSingleton(new ApeSettings(builder.Configuration["Sql:ConnectionString"]));
+
 builder.Services.AddSingleton(new EngineOptions
 {
     ConflictMode = promotionsOptions.ConflictMode,
@@ -34,15 +37,20 @@ builder.Services.AddSingleton(new EngineOptions
     HashKey = promotionsOptions.HashKey,
 });
 builder.Services.AddSingleton<PromotionStore>();
-builder.Services.AddSingleton(sp => new DocumentEvaluator(
-    () => (sp.GetRequiredService<PromotionStore>().Current.Promotions, sp.GetRequiredService<PromotionStore>().Current.Engine),
-    sp.GetService<B1MasterData>()));
 builder.Services.AddHostedService(sp => new PromotionRefreshService(
     sp.GetRequiredService<PromotionStore>(), TimeSpan.FromSeconds(promotionsOptions.RefreshSeconds),
     sp.GetRequiredService<ILogger<PromotionRefreshService>>()));
 
 var app = builder.Build();
-await app.Services.GetRequiredService<PromotionStore>().ReloadAsync();
+var store = app.Services.GetRequiredService<PromotionStore>();
+await store.ReloadAsync();
+
+// One evaluator per company: the same document logic, on that company's own rules view and item/customer data.
+foreach (var company in registry.All)
+{
+    var c = company;
+    c.Evaluator = new DocumentEvaluator(() => { var v = store.ViewFor(c.Db)!; return (v.Promotions, v.Engine); }, c.MasterData);
+}
 
 // Warm the admin app's cached lookups (item groups, manufacturers, customer groups, price lists) in the
 // background, one at a time. On this local demo Service Layer, a burst of brand-new connections right after
@@ -50,7 +58,7 @@ await app.Services.GetRequiredService<PromotionStore>().ReloadAsync();
 // answers instantly once a request lands — this is B1's connection handling, not our client). Once any one
 // request gets through, the rest are fast, so doing this sequentially at startup means whoever opens the
 // admin app first never sees the delay themselves.
-if (app.Services.GetService<PromotionAdmin>() is { } promotionAdmin)
+if (registry.Master.Admin is { } promotionAdmin)
 {
     _ = Task.Run(async () =>
     {
@@ -77,20 +85,19 @@ app.Use(async (ctx, next) =>
     await next();
 });
 
-// Company guard: an add-on names the company its B1 client is in; refuse rather than apply another company's promotions.
+// Company guard: an add-on names the company its B1 client is in; refuse a company this server does not serve.
+// (A file-based API with no Companies configured serves whatever asks.)
+var served = promotionsOptions.UsesServiceLayer || configuredCompanies.Count > 0
+    ? registry.All.Select(c => c.Db).ToList()
+    : new List<string>();
 app.Use(async (ctx, next) =>
 {
-    if (ctx.Request.Path.StartsWithSegments("/api") && ctx.Request.Headers.TryGetValue(CompanyGuard.Header, out var asked))
+    if (ctx.Request.Path.StartsWithSegments("/api") && ctx.Request.Headers.TryGetValue(CompanyGuard.Header, out var asked)
+        && CompanyGuard.Check(served, asked.ToString()) is { } problem)
     {
-        var serves = promotionsOptions.UsesServiceLayer
-            ? ctx.RequestServices.GetRequiredService<IOptions<ServiceLayerOptions>>().Value.CompanyDb
-            : null;
-        if (CompanyGuard.Check(serves, asked.ToString()) is { } problem)
-        {
-            ctx.Response.StatusCode = StatusCodes.Status409Conflict;
-            await ctx.Response.WriteAsJsonAsync(new { errors = new[] { problem }, serves });
-            return;
-        }
+        ctx.Response.StatusCode = StatusCodes.Status409Conflict;
+        await ctx.Response.WriteAsJsonAsync(new { errors = new[] { problem }, serves = served });
+        return;
     }
     await next();
 });
@@ -105,35 +112,37 @@ app.MapGet("/health", (PromotionStore store) =>
 var api = app.MapGroup("/api/v1");
 
 // FR-10: basket in, adjusted lines out. For POS and e-commerce, which build their own basket.
-api.MapPost("/evaluate", (Basket basket, PromotionStore store) =>
+api.MapPost("/evaluate", (Basket basket, HttpContext ctx, PromotionStore store) =>
 {
     if (basket.Lines is null || basket.Lines.Count == 0) return Results.BadRequest(new { error = "Basket has no lines" });
-    var s = store.Current;
+    var s = store.ViewFor(CompanyOf(ctx).Db) ?? store.Current;
     return Results.Ok(s.Engine.Evaluate(basket, s.Promotions));
 });
 
 // Mode A (add-on) and Mode B (worker): a B1 document as it stands in, the write-back plan out.
-// Undoes an earlier APE result first, and looks up item attributes and the customer's group in B1.
-api.MapPost("/documents/evaluate", async (DocumentInput document, DocumentEvaluator evaluator, CancellationToken ct) =>
+// Undoes an earlier APE result first, and looks up item attributes and the customer's group in the company's own B1.
+api.MapPost("/documents/evaluate", async (DocumentInput document, HttpContext ctx, CancellationToken ct) =>
 {
     if (document.Lines is null || document.Lines.Count == 0) return Results.BadRequest(new { error = "Document has no lines" });
-    return Results.Ok(await evaluator.EvaluateAsync(document, ct));
+    return Results.Ok(await CompanyOf(ctx).Evaluator!.EvaluateAsync(document, ct));
 });
 
 // FR-13: run draft promotions against a basket, alone or together with the active ones.
-api.MapPost("/simulate", (SimulationRequest req, PromotionStore store) =>
+api.MapPost("/simulate", (SimulationRequest req, HttpContext ctx, PromotionStore store) =>
 {
     if (req.Basket?.Lines is null || req.Basket.Lines.Count == 0) return Results.BadRequest(new { error = "Basket has no lines" });
-    var s = store.Current;
+    var s = store.ViewFor(CompanyOf(ctx).Db) ?? store.Current;
     var promotions = req.IncludeActive ? s.Promotions.Concat(req.Promotions).ToList() : req.Promotions;
     return Results.Ok(s.Engine.Evaluate(req.Basket, promotions));
 });
 
-// Validation helper for integrations and the B1 procedure tests: recompute the hash of a document's lines (FR-45).
-api.MapPost("/hash", (IReadOnlyList<ResultLine> lines, IOptions<PromotionsOptions> o) =>
-    Results.Ok(new { hash = ResultHasher.Compute(lines, o.Value.HashKey) }));
+// Validation helper for integrations and the B1 procedure tests: recompute the hash of a document's lines (FR-45),
+// with the hash key of the company asking.
+api.MapPost("/hash", (IReadOnlyList<ResultLine> lines, HttpContext ctx, IOptions<PromotionsOptions> o) =>
+    Results.Ok(new { hash = ResultHasher.Compute(lines, CompanyOf(ctx).HashKey ?? o.Value.HashKey) }));
 
-api.MapGet("/promotions", (PromotionStore store) => Results.Ok(store.Current.Promotions));
+api.MapGet("/promotions", (HttpContext ctx, PromotionStore store) =>
+    Results.Ok((store.ViewFor(CompanyOf(ctx).Db) ?? store.Current).Promotions));
 
 api.MapPost("/promotions/reload", async (PromotionStore store, CancellationToken ct) =>
 {
@@ -141,79 +150,114 @@ api.MapPost("/promotions/reload", async (PromotionStore store, CancellationToken
     return Results.Ok(new { promotions = s.Promotions.Count, loadedAt = s.LoadedAt });
 });
 
-// ── Admin app API: reads and writes @APE_PROMO through the Service Layer (Promotions:Source = ServiceLayer) ──
+// ── Admin app API: reads and writes @APE_PROMO in the MASTER company through its Service Layer (Promotions:Source = ServiceLayer) ──
 var admin = api.MapGroup("/admin");
 
-admin.MapGet("/info", (IOptions<PromotionsOptions> o, IOptions<ServiceLayerOptions> sl, ApeSettings settings) => Results.Ok(new
+admin.MapGet("/info", (HttpContext ctx, IOptions<PromotionsOptions> o, CompanyRegistry reg) =>
 {
-    source = o.Value.Source,
-    editable = o.Value.UsesServiceLayer,
-    company = o.Value.UsesServiceLayer ? sl.Value.CompanyDb : null,
-    // Checked by every add-on before it auto-applies on Add/Update (PromotionApplier.Apply): one flip here
-    // reaches every workstation immediately. The manual "Apply Promotions" button always still works.
-    modeAEnabled = settings.ModeAEnabled,
-    modeASettable = settings.Configured,
-}));
-
-// One switch for every workstation's add-on: turns automatic apply-on-save off (or back on) everywhere at once.
-// Distinct from a promotion's own Screens restriction (which document types it runs on) — this is the whole-of-Mode-A kill switch.
-admin.MapPost("/mode-a", (ModeAChange change, ApeSettings settings) =>
-{
-    if (!settings.Configured) return Results.BadRequest(new { errors = new[] { "No SQL connection configured (Sql:ConnectionString)." } });
-    settings.ModeAEnabled = change.Enabled;
-    return Results.Ok(new { modeAEnabled = settings.ModeAEnabled });
+    var asking = CompanyOf(ctx);
+    return Results.Ok(new
+    {
+        source = o.Value.Source,
+        editable = o.Value.UsesServiceLayer,
+        company = o.Value.UsesServiceLayer ? reg.Master.Db : null,
+        master = reg.Master.Db,
+        multiCompany = !reg.IsSingle,
+        // Checked by every add-on before it auto-applies on Add/Update (PromotionApplier.Apply), for ITS company: one flip
+        // in the admin app reaches every workstation of that company immediately. The manual button always still works.
+        modeAEnabled = asking.Settings.ModeAEnabled,
+        modeASettable = asking.Settings.Configured,
+    });
 });
 
-admin.MapGet("/promotions", async (IServiceProvider sp, PromotionStore store, CancellationToken ct) =>
-    sp.GetService<PromotionAdmin>() is { } a
-        ? Results.Ok(await a.ListAsync(ct))
-        : Results.Ok(store.Current.Promotions.Select(p => new AdminPromotion
-            { Code = p.Code, Name = p.Name, Type = p.Type.ToString(), Status = "A", Priority = p.Priority })));
-
-admin.MapGet("/promotions/{code}", async (string code, IServiceProvider sp, CancellationToken ct) =>
-    Admin(sp) is { } a && await a.GetAsync(code, ct) is { } p ? Results.Ok(p) : Results.NotFound());
-
-admin.MapPost("/promotions", async (AdminPromotion p, IServiceProvider sp, PromotionStore store, CancellationToken ct) =>
+// The companies this server serves, for the admin app: which is the master and each one's central switch.
+admin.MapGet("/companies", (CompanyRegistry reg) => Results.Ok(reg.All.Select(c =>
 {
-    if (Admin(sp) is not { } a) return ReadOnly();
-    if (Errors(p) is { Count: > 0 } errors) return Results.BadRequest(new { errors });
+    bool? modeA = null; string? error = null;
+    try { modeA = c.Settings.Configured ? c.Settings.ModeAEnabled : null; }
+    catch (Exception ex) { error = ex.Message; }   // one company's database being unreachable must not hide the others
+    return new { db = c.Db, name = c.Label, master = c.IsMaster, modeAEnabled = modeA, modeASettable = c.Settings.Configured, error };
+})));
+
+// One switch per company for every workstation's add-on: turns automatic apply-on-save off (or back on) there at once.
+// Distinct from a promotion's own Screens restriction (which document types it runs on) — this is the whole-of-Mode-A kill switch.
+admin.MapPost("/mode-a", (ModeAChange change, HttpContext ctx, CompanyRegistry reg) =>
+{
+    var target = reg.Find(change.Company) ?? CompanyOf(ctx);
+    if (!target.Settings.Configured) return Results.BadRequest(new { errors = new[] { $"No SQL connection configured for company {target.Db}." } });
+    target.Settings.ModeAEnabled = change.Enabled;
+    return Results.Ok(new { company = target.Db, modeAEnabled = target.Settings.ModeAEnabled });
+});
+
+admin.MapGet("/promotions", async (CompanyRegistry reg, PromotionStore store, CancellationToken ct) =>
+    reg.Master.Admin is { } a
+        ? Results.Ok(await a.ListAsync(ct))
+        : Results.Ok(store.All.Select(p => new AdminPromotion
+        {
+            Code = p.Code, Name = p.Name, Type = p.Type.ToString(), Status = "A", Priority = p.Priority,
+            Companies = p.Companies.Length == 0 ? null : string.Join(",", p.Companies),
+        })));
+
+admin.MapGet("/promotions/{code}", async (string code, CompanyRegistry reg, CancellationToken ct) =>
+    reg.Master.Admin is { } a && await a.GetAsync(code, ct) is { } p ? Results.Ok(p) : Results.NotFound());
+
+admin.MapPost("/promotions", async (AdminPromotion p, CompanyRegistry reg, PromotionStore store, CancellationToken ct) =>
+{
+    if (reg.Master.Admin is not { } a) return ReadOnly();
+    p = CompanyChecks.Normalize(p, reg);
+    if (Errors(p, reg) is { Count: > 0 } errors) return Results.BadRequest(new { errors });
     if (await a.GetAsync(p.Code, ct) is not null) return Results.Conflict(new { errors = new[] { $"A promotion {p.Code} already exists." } });
     await a.CreateAsync(p, ct);
     await store.ReloadAsync(ct);
     return Results.Ok(await a.GetAsync(p.Code, ct));
 });
 
-admin.MapPut("/promotions/{code}", async (string code, AdminPromotion p, IServiceProvider sp, PromotionStore store, CancellationToken ct) =>
+admin.MapPut("/promotions/{code}", async (string code, AdminPromotion p, CompanyRegistry reg, PromotionStore store, CancellationToken ct) =>
 {
-    if (Admin(sp) is not { } a) return ReadOnly();
-    p = p with { Code = code };
-    if (Errors(p) is { Count: > 0 } errors) return Results.BadRequest(new { errors });
+    if (reg.Master.Admin is not { } a) return ReadOnly();
+    p = CompanyChecks.Normalize(p with { Code = code }, reg);
+    if (Errors(p, reg) is { Count: > 0 } errors) return Results.BadRequest(new { errors });
     if (await a.GetAsync(code, ct) is null) return Results.NotFound();
     await a.UpdateAsync(p, ct);
     await store.ReloadAsync(ct);
     return Results.Ok(await a.GetAsync(code, ct));
 });
 
-// Status changes only: promotions are never hard-deleted (NFR-04); "C" cancels.
-admin.MapPost("/promotions/{code}/status", async (string code, StatusChange change, IServiceProvider sp, PromotionStore store, CancellationToken ct) =>
+// Not blocking: what would go wrong or surprise, including, for a promotion ticked for several companies, where the item
+// groups, manufacturers, items and customer groups it names are not the same thing in the other companies.
+admin.MapPost("/promotions/check", async (AdminPromotion p, CompanyRegistry reg, CancellationToken ct) =>
 {
-    if (Admin(sp) is not { } a) return ReadOnly();
+    p = CompanyChecks.Normalize(p, reg);
+    var notes = p.Validate().Where(m => m.StartsWith("Note:")).Select(m => m["Note:".Length..].Trim()).ToList();
+    notes.AddRange(await CompanyChecks.NotesAsync(p, reg, ct));
+    return Results.Ok(new { errors = Errors(p, reg), notes });
+});
+
+// Status changes only: promotions are never hard-deleted (NFR-04); "C" cancels.
+admin.MapPost("/promotions/{code}/status", async (string code, StatusChange change, CompanyRegistry reg, PromotionStore store, CancellationToken ct) =>
+{
+    if (reg.Master.Admin is not { } a) return ReadOnly();
     if (change.Status is not ("D" or "P" or "A" or "S" or "E" or "C")) return Results.BadRequest(new { errors = new[] { "Unknown status." } });
     await a.SetStatusAsync(code, change.Status, ct);
     await store.ReloadAsync(ct);
     return Results.Ok(await a.GetAsync(code, ct));
 });
 
-admin.MapGet("/lookups/{kind}", async (string kind, string? q, IServiceProvider sp, CancellationToken ct) =>
-    Admin(sp) is { } a ? Results.Ok(await a.LookupAsync(kind, q, ct)) : Results.Ok(Array.Empty<Lookup>()));
+// Lookups in a company (default: the master), for the fields that name its items, groups and customers.
+admin.MapGet("/lookups/{kind}", async (string kind, string? q, string? company, CompanyRegistry reg, CancellationToken ct) =>
+    (reg.Find(company) ?? reg.Master).Admin is { } a ? Results.Ok(await a.LookupAsync(kind, q, ct)) : Results.Ok(Array.Empty<Lookup>()));
 
-// Try a promotion (saved or not) on a sample basket, alone or with the live ones. Prices default to the item's price list.
-admin.MapPost("/simulate", async (AdminSimulation req, PromotionStore store, IServiceProvider sp, CancellationToken ct) =>
+// Try a promotion (saved or not) on a sample basket, alone or with the live ones, in a chosen company (default: the master),
+// with that company's own item data and prices. Prices default to the item's price list.
+admin.MapPost("/simulate", async (AdminSimulation req, HttpContext ctx, CompanyRegistry reg, PromotionStore store, CancellationToken ct) =>
 {
+    var company = reg.Find(req.Company) ?? reg.Master;
+    var view = store.ViewFor(company.Db) ?? store.Current;
+
     // No promotion: the live ones only (the simulator page). With one: that draft, alone or with the live ones.
     var draft = req.Promotion?.ToEngine();
-    var others = draft is null || req.IncludeActive ? store.Current.Promotions.Where(p => p.Code != draft?.Code) : [];
-    var md = sp.GetService<B1MasterData>();
+    var others = draft is null || req.IncludeActive ? view.Promotions.Where(p => p.Code != draft?.Code) : [];
+    var md = company.MasterData;
     CustomerInfo? customer = null;
     if (md is not null)
     {
@@ -233,30 +277,41 @@ admin.MapPost("/simulate", async (AdminSimulation req, PromotionStore store, ISe
             LineNum = i,
             ItemCode = l.ItemCode,
             Quantity = l.Quantity,
-            UnitPrice = l.UnitPrice ?? store.Current.Catalog.Find(l.ItemCode)?.UnitPrice ?? 0,
+            UnitPrice = l.UnitPrice ?? view.Catalog.Find(l.ItemCode)?.UnitPrice ?? 0,
         }).ToList(),
     };
     var promotions = draft is null ? others.ToList() : others.Append(draft).ToList();
-    return Results.Ok(store.Current.Engine.Evaluate(basket, promotions));
+    return Results.Ok(view.Engine.Evaluate(basket, promotions));
 });
 
 app.Run();
 
-static PromotionAdmin? Admin(IServiceProvider sp) => sp.GetService<PromotionAdmin>();
+/// <summary>The company a request is for: the one named in X-Company-Db, or the master when there is none.</summary>
+static CompanyContext CompanyOf(HttpContext ctx)
+{
+    var registry = ctx.RequestServices.GetRequiredService<CompanyRegistry>();
+    return registry.Find(CompanyGuard.Asked(ctx.Request.Headers[CompanyGuard.Header].ToString())) ?? registry.Master;
+}
 
 static IResult ReadOnly() => Results.BadRequest(new { errors = new[] { "Promotions come from files; set Promotions:Source to ServiceLayer to edit them." } });
 
-static List<string> Errors(AdminPromotion p) => p.Validate().Where(m => !m.StartsWith("Note:")).ToList();
+static List<string> Errors(AdminPromotion p, CompanyRegistry reg)
+{
+    var errors = p.Validate().Where(m => !m.StartsWith("Note:")).ToList();
+    foreach (var name in CompanyChecks.Unknown(p, reg))
+        errors.Add($"Unknown company '{name}'. This server serves: {string.Join(", ", reg.All.Select(c => c.Db))}.");
+    return errors;
+}
 
 public sealed record SimulationRequest(Basket Basket, IReadOnlyList<Promotion> Promotions, bool IncludeActive = true);
 
 public sealed record StatusChange(string Status);
 
-public sealed record ModeAChange(bool Enabled);
+public sealed record ModeAChange(bool Enabled, string? Company = null);
 
 public sealed record AdminSimulationLine(string ItemCode, decimal Quantity, decimal? UnitPrice);
 
 public sealed record AdminSimulation(AdminPromotion? Promotion, IReadOnlyList<AdminSimulationLine> Lines, string? CardCode,
-    string[]? Coupons = null, DateTime? Timestamp = null, bool IncludeActive = false, int AmountDecimals = 2);
+    string[]? Coupons = null, DateTime? Timestamp = null, bool IncludeActive = false, int AmountDecimals = 2, string? Company = null);
 
 public partial class Program;

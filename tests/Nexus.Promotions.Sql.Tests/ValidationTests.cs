@@ -237,6 +237,22 @@ public class ValidationTests(SqlFixture db, ITestOutputHelper output) : IClassFi
     }
 
     [SkippableFact]
+    public void Unknown_promotion_code_passes_in_a_company_whose_promotions_live_elsewhere()
+    {
+        Skip.If(db.SkipReason is not null, db.SkipReason);
+        var ghost = Ten with { Code = "MASTER-ONLY-CODE" };     // defined in another company's @APE_PROMO
+        var r = new PromotionEngine().Evaluate(
+            new Basket { Lines = [new BasketLine { ItemCode = "A", Quantity = 1, UnitPrice = 10 }] }, [ghost]);
+        var doc = Save("OINV", "INV1", r);
+
+        Sql("UPDATE dbo.APE_Settings SET Value = N'Y' WHERE Name = N'CentralPromotions'");
+        try { Assert.Equal(0, Validate("13", doc).Error); }
+        finally { Sql("UPDATE dbo.APE_Settings SET Value = NULL WHERE Name = N'CentralPromotions'"); }
+
+        Assert.Equal(71005, Validate("13", doc).Error);          // and without the switch it is still caught
+    }
+
+    [SkippableFact]
     public void Cleared_hash_on_order_is_a_mode_b_request_unless_mode_b_is_off()
     {
         Skip.If(db.SkipReason is not null, db.SkipReason);

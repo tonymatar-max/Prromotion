@@ -20,6 +20,60 @@ const AUDIENCE = { GRP: "Customer group", CARD: "Customer", PL: "Price list", CH
 const DAYS = [["1", "Mon"], ["2", "Tue"], ["3", "Wed"], ["4", "Thu"], ["5", "Fri"], ["6", "Sat"], ["7", "Sun"]];
 const SCREENS = [["OQUT", "Quotation"], ["ORDR", "Sales Order"], ["ODLN", "Delivery"], ["OINV", "Invoice"]];
 
+// Several companies on one server: promotions are defined once, in the master company, and ticked per company.
+const multi = () => !!info.multiCompany && (info.companiesList?.length ?? 0) > 1;
+const masterCompany = () => info.companiesList?.find(c => c.master);
+const companyName = db => info.companiesList?.find(c => c.db.toLowerCase() === String(db).toLowerCase())?.name ?? db;
+const hasCompany = (p, db) => (p.companies ?? "").split(",").some(x => x.trim().toLowerCase() === db.toLowerCase());
+
+function companiesHint(p) {
+  const chosen = info.companiesList.filter(c => hasCompany(p, c.db));
+  const master = masterCompany();
+  if (chosen.length === 0) return `None selected: applies only in ${esc(master.name)}, the master company.`;
+  const names = chosen.map(c => esc(c.name)).join(", ");
+  return hasCompany(p, master.db)
+    ? `Applies in: ${names}.`
+    : `Applies in: ${names}. It does not apply in ${esc(master.name)}, the master company, because that is not selected.`;
+}
+
+function companiesCell(p) {
+  const names = (p.companies ?? "").split(",").map(x => x.trim()).filter(Boolean);
+  return names.length === 0 ? `<span class="muted">${esc(masterCompany()?.name ?? "")} only</span>` : esc(names.map(companyName).join(", "));
+}
+
+// Where the item groups, manufacturers, items and customer groups a promotion names mean something different in another company.
+async function runCompanyCheck(s) {
+  const others = info.companiesList.filter(c => !c.master && hasCompany(s.p, c.db));
+  if (others.length === 0) { s.notes = undefined; return false; }
+  try {
+    s.notes = (await call("/promotions/check", { method: "POST", body: JSON.stringify(payload(s.p)) })).notes;
+  } catch { /* the check is a convenience */ }
+  return true;
+}
+
+function autoApplyBanner() {
+  if (multi()) {
+    if (!info.companiesList.some(c => c.modeASettable)) return "";
+    return `<div class="panel"><div class="body">
+      <div class="hint" style="margin:0 0 8px">Whether each company's add-ons apply promotions automatically on Add/Update, on every workstation of that company. The Apply Promotions button always works either way.</div>
+      ${info.companiesList.map(c => c.modeASettable ? `
+      <div style="display:flex;align-items:center;gap:12px;padding:4px 0">
+        <strong style="min-width:180px">${esc(c.name)}${c.master ? ` <span class="muted">(master)</span>` : ""}</strong>
+        <span class="status ${c.modeAEnabled ? "A" : "C"}">${c.modeAEnabled ? "Auto-apply ON" : "Auto-apply OFF"}</span>
+        <span class="spacer"></span>
+        <button data-mode-a="${esc(c.db)}" class="${c.modeAEnabled ? "danger" : "primary"}">${c.modeAEnabled ? "Turn off" : "Turn on"}</button>
+      </div>` : `<div class="muted" style="padding:4px 0">${esc(c.name)}: no SQL connection is configured for it, so its switch cannot be set here.</div>`).join("")}
+    </div></div>`;
+  }
+  if (!info.modeASettable) return "";
+  return `<div class="panel"><div class="body" style="display:flex;align-items:center;gap:12px">
+      <span class="status ${info.modeAEnabled ? "A" : "C"}">${info.modeAEnabled ? "Auto-apply ON" : "Auto-apply OFF"}</span>
+      <span class="hint" style="margin:0">Whether the add-on applies promotions automatically on Add/Update, on every workstation. The Apply Promotions button always works either way.</span>
+      <span class="spacer"></span>
+      <button data-mode-a="" class="${info.modeAEnabled ? "danger" : "primary"}">${info.modeAEnabled ? "Turn off for everyone" : "Turn on for everyone"}</button>
+    </div></div>`;
+}
+
 let info = { editable: false };
 let lookups = {};          // kind -> [{code, name}]
 let listFilter = "all";
@@ -86,6 +140,7 @@ async function list() {
   let rows;
   try { rows = await call("/promotions"); }
   catch (e) { main.innerHTML = `<div class="alert error">Could not load promotions: ${esc(e.message)}</div>`; return; }
+  if (info.multiCompany) { try { info.companiesList = await call("/companies"); } catch { /* keep the last list */ } }
 
   const counts = rows.reduce((c, p) => (c[p.status] = (c[p.status] ?? 0) + 1, c), {});
   const filters = [["all", `All ${rows.length}`], ...Object.entries(STATUS).filter(([k]) => counts[k]).map(([k, v]) => [k, `${v} ${counts[k]}`])];
@@ -100,20 +155,14 @@ async function list() {
       ${info.editable ? `<button class="primary" id="new">New promotion</button>` : ""}
     </div>
     ${info.editable ? "" : `<div class="alert note">Read-only: the API reads promotions from files. Start it with Promotions:Source=ServiceLayer to edit promotions in B1.</div>`}
-    ${info.modeASettable ? `
-    <div class="panel"><div class="body" style="display:flex;align-items:center;gap:12px">
-      <span class="status ${info.modeAEnabled ? "A" : "C"}">${info.modeAEnabled ? "Auto-apply ON" : "Auto-apply OFF"}</span>
-      <span class="hint" style="margin:0">Whether the add-on applies promotions automatically on Add/Update, on every workstation. The Apply Promotions button always works either way.</span>
-      <span class="spacer"></span>
-      <button id="toggle-mode-a" class="${info.modeAEnabled ? "danger" : "primary"}">${info.modeAEnabled ? "Turn off for everyone" : "Turn on for everyone"}</button>
-    </div></div>` : ""}
+    ${autoApplyBanner()}
     <div class="chips" style="margin-bottom:12px">${filters.map(([k, label]) =>
       `<button class="chip ${listFilter === k ? "on" : ""}" data-f="${k}">${esc(label)}</button>`).join("")}</div>
     <div class="panel">
       ${shown.length === 0 ? `<div class="empty"><div class="brand-mark large"><span class="brand-node"></span></div>
           ${rows.length === 0 ? "No promotions yet. Create the first one." : "Nothing matches this filter."}</div>` : `
       <table>
-        <thead><tr><th>Code</th><th>Name</th><th>Type</th><th>Status</th><th>Valid</th><th>Screens</th><th class="num">Priority</th><th>Stacking</th></tr></thead>
+        <thead><tr><th>Code</th><th>Name</th><th>Type</th><th>Status</th><th>Valid</th><th>Screens</th>${multi() ? "<th>Companies</th>" : ""}<th class="num">Priority</th><th>Stacking</th></tr></thead>
         <tbody>${shown.map(p => `
           <tr class="click" data-code="${esc(p.code)}">
             <td><strong>${esc(p.code)}</strong></td>
@@ -122,6 +171,7 @@ async function list() {
             <td><span class="status ${esc(p.status)}">${esc(STATUS[p.status] ?? p.status)}</span></td>
             <td>${validity(p)}</td>
             <td>${screens(p)}</td>
+            ${multi() ? `<td>${companiesCell(p)}</td>` : ""}
             <td class="num">${p.priority}</td>
             <td>${p.stacking === "E" ? "Exclusive" : "Stackable"}</td>
           </tr>`).join("")}</tbody>
@@ -131,16 +181,19 @@ async function list() {
   main.querySelector("#search").addEventListener("input", e => { listSearch = e.target.value; list(); main.querySelector("#search")?.focus(); });
   main.querySelector("#new")?.addEventListener("click", () => location.hash = "new");
   main.querySelectorAll("[data-f]").forEach(b => b.addEventListener("click", () => { listFilter = b.dataset.f; list(); }));
-  main.querySelector("#toggle-mode-a")?.addEventListener("click", async () => {
-    const turningOff = info.modeAEnabled;
-    if (turningOff && !confirm("Turn off automatic apply-on-save for every workstation? The Apply Promotions button will still work; nothing will fire automatically until this is turned back on.")) return;
+  main.querySelectorAll("[data-mode-a]").forEach(b => b.addEventListener("click", async () => {
+    const db = b.dataset.modeA;
+    const row = db ? info.companiesList.find(c => c.db === db) : null;
+    const turningOff = row ? row.modeAEnabled : info.modeAEnabled;
+    const who = row ? row.name : "every workstation";
+    if (turningOff && !confirm(`Turn off automatic apply-on-save for ${who}? The Apply Promotions button will still work; nothing will fire automatically until this is turned back on.`)) return;
     try {
-      const r = await call("/mode-a", { method: "POST", body: JSON.stringify({ enabled: !turningOff }) });
-      info.modeAEnabled = r.modeAEnabled;
-      toast(info.modeAEnabled ? "Automatic apply is on for every workstation." : "Automatic apply is off for every workstation.");
+      const r = await call("/mode-a", { method: "POST", body: JSON.stringify({ enabled: !turningOff, company: db || null }) });
+      if (row) row.modeAEnabled = r.modeAEnabled; else info.modeAEnabled = r.modeAEnabled;
+      toast(`Automatic apply is ${r.modeAEnabled ? "on" : "off"} for ${who}.`);
       list();
     } catch (e) { toast(e.message, true); }
-  });
+  }));
   main.querySelectorAll("tr[data-code]").forEach(r => r.addEventListener("click", () => location.hash = "edit/" + encodeURIComponent(r.dataset.code)));
 }
 
@@ -159,7 +212,7 @@ const blank = () => ({
   code: "", name: "", nameAr: "", version: 1, type: "ItemDiscount", status: "D", priority: 100, stacking: "S",
   validFrom: "", validFromTime: "", validTo: "", validToTime: "", weekdays: "", timeFrom: "", timeTo: "",
   coupon: "", buyQty: 0, getQty: 0, rewardItem: "", freeMode: "B", rewardUnits: "C", rewardKind: "P", rewardValue: 0,
-  maxApps: null, maxDisc: 0, budget: 0, budgetUsed: 0, allowBelow: false, campaign: "", documents: "",
+  maxApps: null, maxDisc: 0, budget: 0, budgetUsed: 0, allowBelow: false, campaign: "", documents: "", companies: "",
   scopes: [], tiers: [], audience: [],
 });
 
@@ -174,12 +227,14 @@ async function editor(code) {
   }
   const [items, groups, makers, custGroups, priceLists] = await Promise.all(
     ["items", "itemgroups", "manufacturers", "customergroups", "pricelists"].map(lookup));
-  const state = { p, isNew, errors: [], result: null, basket: [{ itemCode: "", quantity: 1, unitPrice: "" }], cardCode: "" };
+  const state = { p, isNew, errors: [], result: null, basket: [{ itemCode: "", quantity: 1, unitPrice: "" }], cardCode: "", company: masterCompany()?.db };
   renderEditor(state, { items, groups, makers, custGroups, priceLists });
 }
 
 function renderEditor(s, lk) {
   const p = s.p;
+  let stepNo = 0;
+  const stepNo_ = () => ++stepNo;   // step numbers follow the sections shown: the Companies step exists only with several companies
   const t = p.type;
   const readOnly = !info.editable;
   const dis = readOnly ? "disabled" : "";
@@ -223,20 +278,20 @@ function renderEditor(s, lk) {
     ${s.errors.length ? `<div class="alert ${s.errors.every(e => e.startsWith("Note:")) ? "note" : "error"}">
       ${s.errors.length === 1 ? esc(s.errors[0]) : `Please check:<ul>${s.errors.map(e => `<li>${esc(e)}</li>`).join("")}</ul>`}</div>` : ""}
 
-    <section class="panel"><h2><span class="step">1</span>Promotion type</h2><div class="body">
+    <section class="panel"><h2><span class="step">${stepNo_()}</span>Promotion type</h2><div class="body">
       <div class="tiles">${TYPES.map(x => `
         <button class="tile ${x.id === t ? "selected" : ""}" data-type="${x.id}" ${dis}>
           <span class="code">${x.code}</span><strong>${x.name}</strong><span class="eg">${x.eg}</span></button>`).join("")}</div>
     </div></section>
 
-    <section class="panel"><h2><span class="step">2</span>Basics</h2><div class="body grid c3">
+    <section class="panel"><h2><span class="step">${stepNo_()}</span>Basics</h2><div class="body grid c3">
       <label class="field"><span>Code</span><input data-k="code" value="${esc(p.code)}" ${s.isNew ? "" : "disabled"} ${dis} maxlength="50" placeholder="RAMADAN-B2G1"></label>
       <label class="field span2"><span>Name</span><input data-k="name" value="${esc(p.name)}" ${dis} maxlength="100" placeholder="Buy 2 shampoo, get 1 free"></label>
       <label class="field span2"><span>Name (Arabic, printed on receipts)</span><input data-k="nameAr" dir="rtl" value="${esc(p.nameAr)}" ${dis}></label>
       <label class="field"><span>Campaign</span><input data-k="campaign" value="${esc(p.campaign)}" ${dis}></label>
     </div></section>
 
-    <section class="panel"><h2><span class="step">3</span>The deal<span class="sub">${esc(TYPES.find(x => x.id === t)?.eg ?? "")}</span></h2><div class="body">
+    <section class="panel"><h2><span class="step">${stepNo_()}</span>The deal<span class="sub">${esc(TYPES.find(x => x.id === t)?.eg ?? "")}</span></h2><div class="body">
       <div class="grid c4">
         ${needsBuyGet ? `
           <label class="field"><span>Customer buys</span><input type="number" min="1" step="1" data-k="buyQty" value="${p.buyQty || ""}" ${dis}></label>
@@ -267,7 +322,7 @@ function renderEditor(s, lk) {
         ${readOnly ? "" : `<button class="link" id="add-tier" style="margin-top:8px">+ Add tier</button>`}` : ""}
     </div></section>
 
-    <section class="panel"><h2><span class="step">4</span>Items<span class="sub">${t === "BasketThreshold" ? "leave empty to count the whole basket" : "which items qualify"}</span></h2><div class="body">
+    <section class="panel"><h2><span class="step">${stepNo_()}</span>Items<span class="sub">${t === "BasketThreshold" ? "leave empty to count the whole basket" : "which items qualify"}</span></h2><div class="body">
       <table class="rows"><tbody>${scopeRows("T") || `<tr><td class="muted" colspan="4">${t === "BasketThreshold" ? "All items count." : "No items yet: the promotion would apply to every item."}</td></tr>`}</tbody></table>
       ${readOnly ? "" : `<button class="link" data-add-scope="T" style="margin-top:8px">+ Add qualifying items</button>`}
       ${rewardRole ? `
@@ -276,13 +331,25 @@ function renderEditor(s, lk) {
         ${readOnly ? "" : `<button class="link" data-add-scope="R" style="margin-top:8px">+ Add reward items</button>`}` : ""}
     </div></section>
 
-    <section class="panel"><h2><span class="step">5</span>Screens<span class="sub">which B1 documents auto-apply this promotion</span></h2><div class="body">
+    <section class="panel"><h2><span class="step">${stepNo_()}</span>Screens<span class="sub">which B1 documents auto-apply this promotion</span></h2><div class="body">
       <div class="chips">${SCREENS.map(([code, label]) =>
         `<button class="chip ${(p.documents ?? "").split(",").includes(code) ? "on" : ""}" data-screen="${code}" ${dis}>${label}</button>`).join("")}</div>
       <p class="hint" style="margin-top:8px">${(p.documents ?? "").trim() === "" ? "None selected: applies on every screen (Quotation, Sales Order, Delivery, Invoice)." : "Applies only on the selected screen(s). A promotion started on a Quotation and copied to an Order still keeps its result either way (FR-18)."}</p>
     </div></section>
 
-    <section class="panel"><h2><span class="step">6</span>When</h2><div class="body grid c4">
+    ${multi() ? `
+    <section class="panel"><h2><span class="step">${stepNo_()}</span>Companies<span class="sub">which companies this promotion applies to</span></h2><div class="body">
+      <div class="chips">${info.companiesList.map(c =>
+        `<button class="chip ${hasCompany(p, c.db) ? "on" : ""}" data-company="${esc(c.db)}" title="${esc(c.db)}" ${dis}>${esc(c.name)}${c.master ? " (master)" : ""}</button>`).join("")}</div>
+      <p class="hint" style="margin-top:8px">${companiesHint(p)}</p>
+      <p class="hint" style="margin-top:4px">Item groups, manufacturers and item properties are numbered per company, so the same number can mean something else in another company.</p>
+      ${readOnly ? "" : `<button class="link" id="check-companies" style="margin-top:6px">Check items and groups in the other companies</button>`}
+      ${s.notes === undefined ? "" : s.notes.length
+        ? `<div class="alert note" style="margin-top:10px">Worth checking:<ul>${s.notes.map(n => `<li>${esc(n)}</li>`).join("")}</ul></div>`
+        : `<p class="hint" style="margin-top:8px;color:var(--ok)">Nothing found: the items and groups it names match in the other companies.</p>`}
+    </div></section>` : ""}
+
+    <section class="panel"><h2><span class="step">${stepNo_()}</span>When</h2><div class="body grid c4">
       <label class="field"><span>Valid from</span><input type="date" data-k="validFrom" value="${esc(p.validFrom)}" ${dis}></label>
       <label class="field"><span>at</span><input type="time" data-k="validFromTime" value="${esc(p.validFromTime)}" ${dis}></label>
       <label class="field"><span>Valid to</span><input type="date" data-k="validTo" value="${esc(p.validTo)}" ${dis}></label>
@@ -293,7 +360,7 @@ function renderEditor(s, lk) {
       <label class="field"><span>to</span><input type="time" data-k="timeTo" value="${esc(p.timeTo)}" ${dis}></label>
     </div></section>
 
-    <section class="panel"><h2><span class="step">7</span>Who<span class="sub">leave empty for everyone</span></h2><div class="body">
+    <section class="panel"><h2><span class="step">${stepNo_()}</span>Who<span class="sub">leave empty for everyone</span></h2><div class="body">
       <table class="rows"><tbody>${p.audience.map((a, i) => `<tr>
         <td style="width:190px"><select data-aud="${i}" data-k="dimension" ${dis}>${Object.entries(AUDIENCE).map(([k, v]) =>
           `<option value="${k}" ${a.dimension === k ? "selected" : ""}>${v}</option>`).join("")}</select></td>
@@ -304,7 +371,7 @@ function renderEditor(s, lk) {
       ${readOnly ? "" : `<button class="link" id="add-aud" style="margin-top:8px">+ Add condition</button>`}
     </div></section>
 
-    <section class="panel"><h2><span class="step">8</span>Limits and stacking</h2><div class="body grid c4">
+    <section class="panel"><h2><span class="step">${stepNo_()}</span>Limits and stacking</h2><div class="body grid c4">
       <label class="field"><span>Priority (1 = highest)</span><input type="number" min="1" data-k="priority" value="${p.priority}" ${dis}></label>
       <label class="field"><span>Stacking</span><select data-k="stacking" ${dis}>
         <option value="S" ${p.stacking === "S" ? "selected" : ""}>Stackable: combines with others</option>
@@ -317,7 +384,7 @@ function renderEditor(s, lk) {
       <label class="check" style="align-self:end;padding-bottom:6px"><input type="checkbox" data-k="allowBelow" ${p.allowBelow ? "checked" : ""} ${dis}> Allow below minimum price</label>
     </div></section>
 
-    <section class="panel"><h2><span class="step">9</span>Try it<span class="sub">runs this promotion, saved or not, on a sample basket</span></h2><div class="body">
+    <section class="panel"><h2><span class="step">${stepNo_()}</span>Try it<span class="sub">runs this promotion, saved or not, on a sample basket</span></h2><div class="body">
       ${basketEditor(s)}
       <div style="display:flex;gap:10px;align-items:center;margin-top:10px">
         <button class="primary" id="simulate">Simulate</button>
@@ -333,7 +400,9 @@ function renderEditor(s, lk) {
 }
 
 function basketEditor(s) {
-  return `<div class="grid c3" style="margin-bottom:8px"><label class="field"><span>Customer</span>
+  return `<div class="grid c3" style="margin-bottom:8px">${multi() ? `<label class="field"><span>Company</span><select id="b-company">${
+      info.companiesList.map(c => `<option value="${esc(c.db)}" ${(s.company ?? masterCompany().db) === c.db ? "selected" : ""}>${esc(c.name)}${c.master ? " (master)" : ""}</option>`).join("")
+    }</select></label>` : ""}<label class="field"><span>Customer</span>
       <input id="b-card" value="${esc(s.cardCode)}" list="dl-items-cust" placeholder="C20000"></label></div>
     <table class="rows"><thead><tr><th>Item</th><th class="num" style="width:120px">Quantity</th><th class="num" style="width:150px">Unit price</th><th></th></tr></thead>
     <tbody>${s.basket.map((l, i) => `<tr>
@@ -393,6 +462,20 @@ function wireEditor(s, lk) {
     rerender();
   }));
 
+  q("[data-company]").forEach(b => b.addEventListener("click", () => {
+    const db = b.dataset.company;
+    const on = hasCompany(p, db);
+    const current = (p.companies ?? "").split(",").map(x => x.trim()).filter(Boolean);
+    const next = on ? current.filter(x => x.toLowerCase() !== db.toLowerCase()) : [...current, db];
+    p.companies = info.companiesList.map(c => c.db).filter(d => next.some(x => x.toLowerCase() === d.toLowerCase())).join(",");
+    s.notes = undefined;
+    rerender();
+  }));
+  main.querySelector("#check-companies")?.addEventListener("click", async () => {
+    if (!await runCompanyCheck(s)) return toast("Tick another company first: the check compares the other companies with the master.", true);
+    rerender();
+  });
+
   q("[data-screen]").forEach(b => b.addEventListener("click", () => {
     const code = b.dataset.screen;
     const current = (p.documents ?? "").split(",").map(x => x.trim()).filter(Boolean);
@@ -438,6 +521,7 @@ function wireEditor(s, lk) {
 
   // Basket for the simulation.
   main.querySelector("#b-card").addEventListener("input", e => s.cardCode = e.target.value);
+  main.querySelector("#b-company")?.addEventListener("change", e => s.company = e.target.value);
   q("[data-b]").forEach(el => el.addEventListener("input", () => {
     const l = s.basket[+el.dataset.b];
     l[el.dataset.k] = el.dataset.k === "itemCode" ? el.value : el.value;
@@ -454,6 +538,7 @@ function wireEditor(s, lk) {
     try {
       s.result = await call("/simulate", { method: "POST", body: JSON.stringify({
         promotion: payload(p), lines, cardCode: s.cardCode || null, includeActive: !!s.withActive, amountDecimals: 2,
+        company: multi() ? (s.company ?? masterCompany().db) : null,
       }) });
       rerender();
       main.querySelector(".result-totals")?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -468,6 +553,7 @@ function wireEditor(s, lk) {
         : await call(`/promotions/${encodeURIComponent(p.code)}`, { method: "PUT", body: JSON.stringify(body) });
       toast(`${saved.code} saved.`);
       s.p = { ...blank(), ...saved }; s.isNew = false; s.errors = [];
+      await runCompanyCheck(s);   // saved either way; differences in the other companies are shown, not blocking
       history.replaceState(null, "", "#edit/" + encodeURIComponent(saved.code));
       rerender();
     } catch (e) { s.errors = e.errors ?? [e.message]; rerender(); window.scrollTo(0, 0); main.scrollTo(0, 0); }
@@ -492,7 +578,7 @@ function payload(p) {
     ...p,
     nameAr: blankToNull(p.nameAr), validFrom: blankToNull(p.validFrom), validFromTime: blankToNull(p.validFromTime),
     validTo: blankToNull(p.validTo), validToTime: blankToNull(p.validToTime), weekdays: blankToNull(p.weekdays),
-    timeFrom: blankToNull(p.timeFrom), timeTo: blankToNull(p.timeTo), coupon: blankToNull(p.coupon), documents: blankToNull(p.documents),
+    timeFrom: blankToNull(p.timeFrom), timeTo: blankToNull(p.timeTo), coupon: blankToNull(p.coupon), documents: blankToNull(p.documents), companies: blankToNull(p.companies),
     rewardItem: blankToNull(p.rewardItem), campaign: blankToNull(p.campaign),
     maxApps: p.maxApps || null,
     scopes: p.scopes.filter(x => String(x.value).trim()).map(x => ({ ...x, value: String(x.value).trim() })),
@@ -509,7 +595,7 @@ function debounce(fn, ms) {
 // ── simulator (live promotions on a basket, as the add-on and worker see it) ──
 async function simulator() {
   setNav("simulator");
-  const s = { basket: [{ itemCode: "", quantity: 1, unitPrice: "" }], cardCode: "", result: null };
+  const s = { basket: [{ itemCode: "", quantity: 1, unitPrice: "" }], cardCode: "", result: null, company: masterCompany()?.db };
   const items = await lookup("items");
   const render = () => {
     main.innerHTML = `
@@ -521,6 +607,7 @@ async function simulator() {
         ${s.result ? resultView(s.result) : ""}
       </div></section>${datalist("dl-items", items)}`;
     main.querySelector("#b-card").addEventListener("input", e => s.cardCode = e.target.value);
+    main.querySelector("#b-company")?.addEventListener("change", e => s.company = e.target.value);
     main.querySelectorAll("[data-b]").forEach(el => el.addEventListener("input", () => { s.basket[+el.dataset.b][el.dataset.k] = el.value; }));
     main.querySelector("#add-b").addEventListener("click", () => { s.basket.push({ itemCode: "", quantity: 1, unitPrice: "" }); render(); });
     main.querySelectorAll("[data-del-b]").forEach(b => b.addEventListener("click", () => { s.basket.splice(+b.dataset.delB, 1); render(); }));
@@ -530,6 +617,7 @@ async function simulator() {
       try {
         s.result = await call("/simulate", { method: "POST", body: JSON.stringify({
           promotion: null, cardCode: s.cardCode || null, amountDecimals: 2,
+          company: multi() ? (s.company ?? masterCompany().db) : null,
           lines: lines.map(l => ({ itemCode: l.itemCode.trim(), quantity: num(l.quantity), unitPrice: l.unitPrice === "" ? null : num(l.unitPrice) })),
         }) });
         render();
@@ -543,9 +631,13 @@ async function simulator() {
 (async () => {
   try {
     info = await call("/info");
+    if (info.multiCompany) {
+      try { info.companiesList = await call("/companies"); }
+      catch { info.multiCompany = false; }   // the single-company screens still work
+    }
     if (info.company) {
       const c = document.getElementById("company");
-      c.textContent = info.company;
+      c.textContent = multi() ? `${masterCompany().name} + ${info.companiesList.length - 1} more` : info.company;
       c.hidden = false;
     }
   } catch { /* the list shows the error */ }

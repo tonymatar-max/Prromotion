@@ -31,6 +31,8 @@ public sealed record AdminPromotion
     public string? Coupon { get; init; }
     /// <summary>Comma list of document screens this auto-applies to (OQUT,ORDR,ODLN,OINV); blank = every screen.</summary>
     public string? Documents { get; init; }
+    /// <summary>Comma list of company databases this applies to when one server serves several; blank = the master company only.</summary>
+    public string? Companies { get; init; }
     public decimal BuyQty { get; init; }
     public decimal GetQty { get; init; }
     public string? RewardItem { get; init; }
@@ -73,6 +75,7 @@ public sealed record AdminPromotion
             ["U_TimeTo"] = Empty(TimeTo),
             ["U_Coupon"] = Empty(Coupon),
             ["U_Documents"] = Empty(Documents),
+            ["U_Companies"] = Empty(Companies),
             ["U_BuyQty"] = BuyQty,
             ["U_GetQty"] = GetQty,
             ["U_RewardItem"] = Empty(RewardItem),
@@ -121,6 +124,7 @@ public sealed record AdminPromotion
         TimeTo = Time(Str(n, "U_TimeTo")),
         Coupon = Str(n, "U_Coupon"),
         Documents = Str(n, "U_Documents"),
+        Companies = Str(n, "U_Companies"),
         BuyQty = Dec(n, "U_BuyQty"),
         GetQty = Dec(n, "U_GetQty"),
         RewardItem = Str(n, "U_RewardItem"),

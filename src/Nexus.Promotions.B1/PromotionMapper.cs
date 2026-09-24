@@ -33,6 +33,7 @@ public static class PromotionMapper
             TimeTo = Time(Str(p, "U_TimeTo")),
             CouponCode = Str(p, "U_Coupon"),
             DocumentTypes = (Str(p, "U_Documents") ?? "").Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries),
+            Companies = (Str(p, "U_Companies") ?? "").Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries),
             Scope = Scope(scopes.Where(r => Str(r, "U_Role") != "R")),
             RewardScope = scopes.Any(r => Str(r, "U_Role") == "R") ? Scope(scopes.Where(r => Str(r, "U_Role") == "R")) : null,
             BuyQuantity = Dec(p, "U_BuyQty"),

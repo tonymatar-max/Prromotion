@@ -73,6 +73,8 @@ public static class Schema
         yield return Alpha(P, "Coupon", "Coupon code", 50);
         // Comma list of document types this promotion auto-applies to (OQUT,ORDR,ODLN,OINV); empty = all screens.
         yield return Alpha(P, "Documents", "Document screens (blank = all)", 40);
+        // Comma list of company databases (one shared promotion server); blank = the master company only.
+        yield return Alpha(P, "Companies", "Companies (blank = master only)", 254);
         yield return Float(P, "BuyQty", "Buy quantity (X / N)", "st_Quantity");
         yield return Float(P, "GetQty", "Get quantity (Y)", "st_Quantity");
         yield return Alpha(P, "RewardItem", "Reward item (added)", 50);

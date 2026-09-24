@@ -117,6 +117,12 @@ public sealed record Promotion
     /// unaffected by this restriction and are filtered by Audience.Channels instead.
     /// </summary>
     public string[] DocumentTypes { get; init; } = [];
+    /// <summary>
+    /// Companies (B1 company database names) this promotion is ticked for when one server serves several. Empty means
+    /// the master company only, the safe default; see <c>CompanyScope</c> in Nexus.Promotions.B1. The engine ignores it:
+    /// the store hands each company only its own promotions.
+    /// </summary>
+    public string[] Companies { get; init; } = [];
     public string? CouponCode { get; init; }
 
     /// <summary>Items that trigger the promotion (and receive it, for price and basket types).</summary>
