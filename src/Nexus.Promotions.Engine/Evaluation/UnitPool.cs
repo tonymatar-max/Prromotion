@@ -7,6 +7,8 @@ namespace Nexus.Promotions.Engine.Evaluation;
 internal sealed class UnitPool
 {
     readonly List<WorkLine> _lines;
+    // Units this pool has set aside (not consumed, so other promotions still see them): see Skip.
+    readonly Dictionary<WorkLine, decimal> _skipped = [];
 
     public UnitPool(IEnumerable<WorkLine> lines) =>
         _lines = lines
@@ -14,7 +16,20 @@ internal sealed class UnitPool
             .ThenBy(l => l.Source.LineNum)
             .ToList();
 
-    public decimal Remaining => _lines.Sum(l => l.AvailableUnits);
+    decimal Available(WorkLine l) => l.AvailableUnits - _skipped.GetValueOrDefault(l);
+
+    public decimal Remaining => _lines.Sum(Available);
+
+    /// <summary>
+    /// Gives the picked units back to the lines but leaves them out of this pool from now on. For a set that cannot be used
+    /// as it stands, while a later set from the same pool still might: the units stay payable at full price and are free for
+    /// every other promotion.
+    /// </summary>
+    public void Skip(List<Pick> picks)
+    {
+        Return(picks);
+        foreach (var p in picks) _skipped[p.Line] = _skipped.GetValueOrDefault(p.Line) + p.Qty;
+    }
 
     /// <summary>Takes exactly <paramref name="qty"/> units, or nothing (null) if there are not enough.</summary>
     public List<Pick>? Take(decimal qty, UnitSelection selection) => TakeCore(qty, selection, exact: true);
@@ -30,7 +45,7 @@ internal sealed class UnitPool
         for (int n = 0; n < _lines.Count && left > 0; n++)
         {
             var line = _lines[selection == UnitSelection.Dearest ? n : _lines.Count - 1 - n];
-            var take = Math.Min(line.AvailableUnits, left);
+            var take = Math.Min(Available(line), left);
             if (take <= 0) continue;
             picks.Add(new Pick(line, take));
             left -= take;

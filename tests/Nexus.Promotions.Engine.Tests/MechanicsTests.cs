@@ -166,6 +166,46 @@ public class MechanicsTests
         Assert.Contains(r.NearMisses, n => n.Message.Contains("Add 2 more"));
     }
 
+    // Sets come cheapest first. With a fixed set price the cheapest set can cost less than the price (no saving) while
+    // a dearer set saves: the engine used to stop at the first one and give the customer nothing.
+    [Fact]
+    public void P06_a_cheap_set_that_saves_nothing_does_not_hide_a_dearer_one_that_does()
+    {
+        var promo = new Promotion
+        {
+            Code = "ANY3", Type = PromotionType.MixAndMatch, Scope = new ItemScope { ItemGroups = ["SNACK"] },
+            BuyQuantity = 3, RewardKind = RewardKind.FixedPrice, RewardValue = 10m,
+        };
+        var r = Run(Basket(Line(0, "CHEAP", 3, 2m, group: "SNACK"), Line(1, "DEAR", 3, 5m, group: "SNACK")), promo);
+
+        // CHEAP x3 = 6 (no saving, left at full price); DEAR x3 = 15 for 10 -> saves 5
+        Assert.Equal(5m, r.DiscountTotal);
+        Assert.Equal(0m, r.Paid(0).DiscountAmount);
+        Assert.Equal(5m, r.Paid(1).DiscountAmount);
+        Assert.Equal(21m - 5m, r.NetTotal);
+    }
+
+    [Fact]
+    public void P06_units_set_aside_by_a_set_that_saves_nothing_stay_available_to_other_promotions()
+    {
+        var mix = new Promotion
+        {
+            Code = "ANY3", Type = PromotionType.MixAndMatch, Priority = 1, Scope = new ItemScope { ItemGroups = ["SNACK"] },
+            BuyQuantity = 3, RewardKind = RewardKind.FixedPrice, RewardValue = 10m,
+        };
+        var b2g1 = new Promotion
+        {
+            Code = "CHEAP-B2G1", Type = PromotionType.BuyXGetXFree, Priority = 2, Scope = Items("CHEAP"),
+            BuyQuantity = 2, GetQuantity = 1, RewardKind = RewardKind.Free,
+        };
+        var r = Run(Basket(Line(0, "CHEAP", 3, 2m, group: "SNACK"), Line(1, "DEAR", 3, 5m, group: "SNACK")), mix, b2g1);
+
+        var free = Assert.Single(r.FreeLines());
+        Assert.Equal("CHEAP", free.ItemCode);
+        Assert.Equal(1m, free.Quantity);
+        Assert.Equal(5m + 2m, r.DiscountTotal);
+    }
+
     [Fact]
     public void P08_spend_threshold_is_spread_proportionally()
     {

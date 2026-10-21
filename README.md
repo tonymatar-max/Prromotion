@@ -203,5 +203,4 @@ Performance: 500 lines against 500 active promotions takes about 130 ms in Relea
 
 - An exclusive quantity or basket promotion only sees lines no earlier-phase promotion touched. There is no
   "best deal" comparison across phases yet.
-- `MixAndMatch` with `Cheapest` selection stops at the first set that saves nothing.
 - Promotion amounts are in document currency; there is no conversion yet.

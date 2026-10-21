@@ -261,8 +261,16 @@ internal static class QuantityPhase
             };
             if (benefit <= 0)
             {
-                UnitPool.Return(set);
                 reason = "Set price is not lower than the items' price";
+                // Sets come cheapest first, so with a fixed set price the first ones can cost less than the price while
+                // dearer ones further up still save the customer money: set these aside and keep looking. Every other
+                // case only gets worse from here (dearest first) or does not depend on the price (% off, amount off).
+                if (p.RewardKind == RewardKind.FixedPrice && p.RewardUnits == UnitSelection.Cheapest && pool.Remaining >= p.BuyQuantity)
+                {
+                    pool.Skip(set);
+                    continue;
+                }
+                UnitPool.Return(set);
                 break;
             }
             if (!ctx.TrySpend(p, benefit))
