@@ -130,6 +130,30 @@ api.MapPost("/documents/evaluate", async (DocumentInput document, HttpContext ct
     return Results.Ok(await CompanyOf(ctx).Evaluator!.EvaluateAsync(document, ct));
 });
 
+// Sales channels that create the B1 order themselves (Cobalt Customer Portal, e-commerce): the order about to be created in,
+// the discounted lines, the promotions applied and the Service Layer fields to merge into POST /Orders out. See docs/portal-integration.md.
+api.MapPost("/portal/orders/evaluate", async (PortalOrderRequest order, HttpContext ctx, CancellationToken ct) =>
+{
+    var errors = new List<string>();
+    if (order.Lines is null || order.Lines.Count == 0) errors.Add("The order has no lines.");
+    else
+    {
+        if (order.Lines.Count > 1000) errors.Add("At most 1000 lines.");
+        foreach (var l in order.Lines)
+        {
+            if (string.IsNullOrWhiteSpace(l.ItemCode)) errors.Add($"Line {l.LineNum}: itemCode is required.");
+            if (l.Quantity <= 0) errors.Add($"Line {l.LineNum} ({l.ItemCode}): quantity must be above zero.");
+            if (l.UnitPrice < 0) errors.Add($"Line {l.LineNum} ({l.ItemCode}): unitPrice cannot be negative.");
+        }
+        if (order.Lines.Select(l => l.LineNum).Distinct().Count() != order.Lines.Count) errors.Add("lineNum must be different on every line.");
+    }
+    if (order.AmountDecimals is < 0 or > 6) errors.Add("amountDecimals must be between 0 and 6.");
+    if (errors.Count > 0) return Results.BadRequest(new { errors = errors.Take(20) });
+
+    var evaluation = await CompanyOf(ctx).Evaluator!.EvaluateAsync(PortalOrderPlan.ToDocument(order), ct);
+    return Results.Ok(PortalOrderPlan.Build(evaluation));
+});
+
 // FR-13: run draft promotions against a basket, alone or together with the active ones.
 api.MapPost("/simulate", (SimulationRequest req, HttpContext ctx, PromotionStore store) =>
 {
