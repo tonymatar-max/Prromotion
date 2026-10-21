@@ -32,25 +32,33 @@ about to create, gets back the discounted lines and the exact Service Layer fiel
 - `amountDecimals`: 3 for KWD/BHD/OMR, 2 for AED/SAR/QAR. `coupons`, `docDate` are optional.
 - Up to 1000 lines. A bad request is `400 { "errors": [...] }` listing every problem.
 
-## Response (abridged)
+## Response (abridged, real output for the request above)
 
 ```json
 {
-  "applied": [ { "code": "NIVEA15", "name": "15% off all Nivea", "timesApplied": 1, "discountAmount": 1.65 } ],
+  "applied": [
+    { "code": "SHAMPOO-B2G1", "name": "Buy 2 shampoo, get 1 free", "timesApplied": 1, "discountAmount": 1.95 },
+    { "code": "NIVEA15", "name": "15% off all Nivea", "timesApplied": 1, "discountAmount": 1.65 },
+    { "code": "SHAMPOO-TIER", "name": "Shampoo: 6+ pcs 8%, 12+ pcs 12%", "timesApplied": 1, "discountAmount": 0.2 }
+  ],
   "lines": [
-    { "sourceLineNum": 0, "itemCode": "N-CREAM", "quantity": 4, "unitPrice": 2.75, "discountPercent": 15,
+    { "sourceLineNum": 0, "itemCode": "N-CREAM", "quantity": 4, "unitPrice": 2.75, "discountPercent": 15.0,
       "discountAmount": 1.65, "netTotal": 9.35, "isFree": false, "isAdded": false, "promotionCodes": "NIVEA15" },
+    { "sourceLineNum": 1, "itemCode": "SH-400", "quantity": 2, "unitPrice": 1.95, "discountPercent": 5.128205,
+      "discountAmount": 0.2, "netTotal": 3.7, "isFree": false, "isAdded": false, "promotionCodes": "SHAMPOO-TIER,SHAMPOO-B2G1" },
     { "sourceLineNum": 1, "itemCode": "SH-400", "quantity": 1, "unitPrice": 1.95, "discountPercent": 100,
       "discountAmount": 1.95, "netTotal": 0, "isFree": true, "isAdded": false, "promotionCodes": "SHAMPOO-B2G1" }
   ],
-  "grossTotal": 12.65, "discountTotal": 3.6, "netTotal": 9.05,
-  "nearMisses": [],
-  "hash": "9F2C...",
+  "grossTotal": 16.85, "discountTotal": 3.8, "netTotal": 13.05,
+  "nearMisses": [ { "code": "SHAMPOO-TIER", "message": "Add 3 more to get 8% off" },
+                  { "code": "SPEND50", "message": "Spend 36.95 more to get 5% off" } ],
+  "hash": "3A477E0C...068B",
   "serviceLayer": {
-    "header": { "U_APE_Hash": "9F2C...", "U_APE_Mode": "A", "U_APE_Status": "Applied", "U_APE_EvalAt": "2026-10-21 10:00:00" },
+    "header": { "U_APE_Hash": "3A477E0C...068B", "U_APE_Mode": "A", "U_APE_Status": "Applied", "U_APE_EvalAt": "2026-10-21 21:05:02" },
     "documentLines": [
-      { "ItemCode": "N-CREAM", "Quantity": 4, "UnitPrice": 2.75, "DiscountPercent": 15,
+      { "ItemCode": "N-CREAM", "Quantity": 4, "UnitPrice": 2.75, "DiscountPercent": 15.0,
         "U_APE_Promo": "NIVEA15", "U_APE_DiscAmt": 1.65, "U_APE_Free": "N", "U_APE_Group": "" }
+      // ... one entry per line above, same order
     ]
   }
 }
