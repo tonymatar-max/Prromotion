@@ -16,7 +16,8 @@ var promotionsOptions = builder.Configuration.GetSection("Promotions").Get<Promo
 // The companies this server serves. Promotions are defined once in the master company and ticked per company; each
 // company is evaluated with its own item, customer and price data. Without a "Companies" section there is one company
 // (ServiceLayer:CompanyDb) and everything behaves as it did before several companies were supported.
-var companyFile = new CompanySettingsFile(Path.Combine(builder.Environment.ContentRootPath, "companies.json"));
+// CompaniesFile moves it (tests point it at a temp path, so a developer's own companies.json cannot leak into them).
+var companyFile = new CompanySettingsFile(Path.Combine(builder.Environment.ContentRootPath, builder.Configuration["CompaniesFile"] ?? "companies.json"));
 var configuredCompanies = companyFile.Load() ?? builder.Configuration.GetSection("Companies").Get<List<CompanyOptions>>() ?? [];
 builder.Services.AddSingleton(companyFile);
 var registry = CompanyRegistry.Build(

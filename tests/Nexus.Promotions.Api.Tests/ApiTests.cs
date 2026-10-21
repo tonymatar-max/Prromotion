@@ -26,6 +26,28 @@ public class ApiTests(WebApplicationFactory<Program> factory) : IClassFixture<We
         Assert.Equal(8, res.GetProperty("promotions").GetInt32());
     }
 
+    // From files the admin app is read-only, but it must still be able to open a promotion it lists (was HTTP 404).
+    [Fact]
+    public async Task Admin_app_opens_a_file_promotion_by_code_and_lists_the_same_ones()
+    {
+        var client = factory.CreateClient();
+        var list = await client.GetFromJsonAsync<JsonElement>("/api/v1/admin/promotions");
+        var codes = list.EnumerateArray().Select(p => p.GetProperty("code").GetString()!).ToList();
+        Assert.Contains("NIVEA15", codes);
+
+        foreach (var code in codes)
+            Assert.Equal(HttpStatusCode.OK, (await client.GetAsync($"/api/v1/admin/promotions/{code}")).StatusCode);
+
+        var nivea = await client.GetFromJsonAsync<JsonElement>("/api/v1/admin/promotions/nivea15"); // case does not matter
+        Assert.Equal("ItemDiscount", nivea.GetProperty("type").GetString());
+        Assert.Equal("P", nivea.GetProperty("rewardKind").GetString());
+        Assert.Equal(15m, nivea.GetProperty("rewardValue").GetDecimal());
+        Assert.Equal("A", nivea.GetProperty("status").GetString());
+        Assert.Contains(nivea.GetProperty("scopes").EnumerateArray(), s => s.GetProperty("scopeType").GetString() == "M");
+
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/api/v1/admin/promotions/NO-SUCH-CODE")).StatusCode);
+    }
+
     [Fact]
     public async Task Evaluate_sample_basket_applies_every_mechanic()
     {
