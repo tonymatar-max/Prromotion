@@ -1,4 +1,4 @@
-# Nexus Promotions (APE) for SAP Business One
+# Cobalt B1 Promotions (APE) for SAP Business One
 
 Advanced promotions engine for SAP B1: one engine, called by the B1 client add-on (Mode A, before save),
 the queue worker (Mode B, after save), POS and e-commerce. Requirements: the PRD

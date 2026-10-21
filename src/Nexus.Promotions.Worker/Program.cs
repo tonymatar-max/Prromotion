@@ -17,7 +17,7 @@ builder.Configuration.SetBasePath(AppContext.BaseDirectory)
     .AddJsonFile("appsettings.Local.json", optional: true)
     .AddEnvironmentVariables("APE_");
 // One worker per company; a second company on the same machine sets Worker:ServiceName to install its own.
-builder.Services.AddWindowsService(o => o.ServiceName = builder.Configuration["Worker:ServiceName"] ?? "Nexus Promotions Worker");
+builder.Services.AddWindowsService(o => o.ServiceName = builder.Configuration["Worker:ServiceName"] ?? "Cobalt B1 Promotion Worker");
 
 builder.Services.Configure<ServiceLayerOptions>(builder.Configuration.GetSection("ServiceLayer"));
 builder.Services.Configure<WorkerOptions>(builder.Configuration.GetSection("Worker"));

@@ -51,7 +51,7 @@ internal static class Program
             System.Windows.Forms.MessageBox.Show(
                 "Could not connect to SAP Business One.\n\n"
                 + "Open the B1 client, log in to a company, then run this add-on again.\n\n" + ex.Message,
-                "Nexus Promotions", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
+                "Cobalt B1 Promotions", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
             return 1;
         }
 
@@ -76,7 +76,7 @@ internal static class Program
         SetFilters(_app);
         _app.ItemEvent += OnItemEvent;
         _app.AppEvent += OnAppEvent;
-        _app.StatusBar.SetText($"Nexus Promotions connected (engine {settings.ResolvedApiUrl}).",
+        _app.StatusBar.SetText($"Cobalt B1 Promotions connected (engine {settings.ResolvedApiUrl}).",
             BoMessageTime.bmt_Short, BoStatusBarMessageType.smt_Success);
 
         System.Windows.Forms.Application.Run();
@@ -125,7 +125,7 @@ internal static class Program
         {
             // Never block the user's document because of an add-on error; report it and let B1 continue.
             Diagnostics.Log(ex.ToString());
-            _app?.StatusBar.SetText("Nexus Promotions: " + ex.Message, BoMessageTime.bmt_Medium, BoStatusBarMessageType.smt_Error);
+            _app?.StatusBar.SetText("Cobalt B1 Promotions: " + ex.Message, BoMessageTime.bmt_Medium, BoStatusBarMessageType.smt_Error);
         }
         finally
         {

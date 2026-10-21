@@ -1,4 +1,4 @@
-// Nexus Promotions admin app. Plain JS, no build step; served by the promotion API.
+// Cobalt B1 Promotions admin app. Plain JS, no build step; served by the promotion API.
 // Reads and writes the @APE_PROMO UDO through /api/v1/admin/*.
 
 const API = "/api/v1/admin";

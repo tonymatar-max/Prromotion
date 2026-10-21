@@ -5,7 +5,7 @@ using Nexus.Promotions.Engine;
 
 var builder = WebApplication.CreateBuilder(args);
 // A second server on the same machine runs its own copy under its own service name (Service:Name).
-builder.Host.UseWindowsService(o => o.ServiceName = builder.Configuration["Service:Name"] ?? "Nexus Promotions API"); // no-op from a console
+builder.Host.UseWindowsService(o => o.ServiceName = builder.Configuration["Service:Name"] ?? "Cobalt B1 Promotion"); // no-op from a console
 builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true).AddEnvironmentVariables("APE_");
 builder.Services.Configure<PromotionsOptions>(builder.Configuration.GetSection("Promotions"));
 builder.Services.Configure<ServiceLayerOptions>(builder.Configuration.GetSection("ServiceLayer"));
