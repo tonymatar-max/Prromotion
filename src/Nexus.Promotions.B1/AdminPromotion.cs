@@ -151,6 +151,74 @@ public sealed record AdminPromotion
         Active = true, // simulate a draft as if it were live
     };
 
+    /// <summary>
+    /// An engine promotion as the admin app would show it. Used when promotions come from files, not the UDO, so the
+    /// admin app can still open one (read-only): there is no status or budget-used in the engine model, so status is
+    /// A active / S paused (from <see cref="Promotion.Active"/>) and budget-used is 0. The reverse of the field
+    /// conventions in <see cref="PromotionMapper"/> and <see cref="FromUdo"/>.
+    /// </summary>
+    public static AdminPromotion FromEngine(Promotion p) => new()
+    {
+        Code = p.Code,
+        Name = p.Name,
+        NameAr = p.NameAr,
+        Version = p.Version,
+        Type = p.Type.ToString(),
+        Status = p.Active ? "A" : "S",
+        Priority = p.Priority,
+        Stacking = p.Stacking == StackClass.Exclusive ? "E" : "S",
+        ValidFrom = p.ValidFrom?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+        ValidFromTime = TimePart(p.ValidFrom),
+        ValidTo = p.ValidTo?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+        ValidToTime = TimePart(p.ValidTo),
+        Weekdays = p.Weekdays.Length == 0 ? null
+            : new string(p.Weekdays.Select(d => (char)('0' + (d == DayOfWeek.Sunday ? 7 : (int)d))).OrderBy(c => c).ToArray()),
+        TimeFrom = p.TimeFrom?.ToString("HH:mm", CultureInfo.InvariantCulture),
+        TimeTo = p.TimeTo?.ToString("HH:mm", CultureInfo.InvariantCulture),
+        Coupon = p.CouponCode,
+        Documents = p.DocumentTypes.Length == 0 ? null : string.Join(",", p.DocumentTypes),
+        Companies = p.Companies.Length == 0 ? null : string.Join(",", p.Companies),
+        BuyQty = p.BuyQuantity,
+        GetQty = p.GetQuantity,
+        RewardItem = p.RewardItemCode,
+        FreeMode = p.FreeMode == FreeItemMode.AddNew ? "N" : "B",
+        RewardUnits = p.RewardUnits == UnitSelection.Dearest ? "D" : "C",
+        RewardKind = p.RewardKind switch
+        {
+            Engine.RewardKind.AmountOff => "A",
+            Engine.RewardKind.FixedPrice => "F",
+            Engine.RewardKind.Free => "X",
+            _ => "P",
+        },
+        RewardValue = p.RewardValue,
+        MaxApps = p.MaxApplicationsPerDocument,
+        MaxDisc = p.MaxDiscountPerDocument ?? 0m,
+        Budget = p.BudgetRemaining ?? 0m,
+        BudgetUsed = 0m,
+        AllowBelow = p.AllowBelowMinPrice,
+        Scopes = ScopeRows(p.Scope, "T").Concat(p.RewardScope is { } r ? ScopeRows(r, "R") : []).ToList(),
+        Tiers = p.Tiers.Select(t => new AdminTier(t.From, t.Value)).ToList(),
+        Audience =
+        [
+            .. p.Audience.Channels.Select(v => new AdminAudience("CH", v)),
+            .. p.Audience.CardCodes.Select(v => new AdminAudience("CARD", v)),
+            .. p.Audience.CustomerGroups.Select(v => new AdminAudience("GRP", v)),
+            .. p.Audience.Branches.Select(v => new AdminAudience("BR", v)),
+            .. p.Audience.PriceLists.Select(v => new AdminAudience("PL", v)),
+        ],
+    };
+
+    static string? TimePart(DateTime? dt) => dt is { } d && d.TimeOfDay != TimeSpan.Zero ? d.ToString("HH:mm", CultureInfo.InvariantCulture) : null;
+
+    static IEnumerable<AdminScope> ScopeRows(ItemScope s, string role) =>
+    [
+        .. s.ItemCodes.Select(v => new AdminScope(role, "I", v, false)),
+        .. s.ItemGroups.Select(v => new AdminScope(role, "G", v, false)),
+        .. s.Manufacturers.Select(v => new AdminScope(role, "M", v, false)),
+        .. s.Properties.Select(v => new AdminScope(role, "P", v.ToString(CultureInfo.InvariantCulture), false)),
+        .. s.ExcludeItemCodes.Select(v => new AdminScope(role, "I", v, true)),
+    ];
+
     /// <summary>Problems that would make the promotion do nothing or something unexpected. Messages starting "Note:" are warnings, not errors.</summary>
     public List<string> Validate()
     {

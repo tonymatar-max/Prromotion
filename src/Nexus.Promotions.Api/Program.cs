@@ -213,14 +213,16 @@ admin.MapPut("/settings/companies", (List<CompanyOptions> incoming, CompanySetti
 admin.MapGet("/promotions", async (CompanyRegistry reg, PromotionStore store, CancellationToken ct) =>
     reg.Master.Admin is { } a
         ? Results.Ok(await a.ListAsync(ct))
-        : Results.Ok(store.All.Select(p => new AdminPromotion
-        {
-            Code = p.Code, Name = p.Name, Type = p.Type.ToString(), Status = "A", Priority = p.Priority,
-            Companies = p.Companies.Length == 0 ? null : string.Join(",", p.Companies),
-        })));
+        : Results.Ok(store.All.Select(AdminPromotion.FromEngine)));
 
-admin.MapGet("/promotions/{code}", async (string code, CompanyRegistry reg, CancellationToken ct) =>
-    reg.Master.Admin is { } a && await a.GetAsync(code, ct) is { } p ? Results.Ok(p) : Results.NotFound());
+// From the UDO when editable; otherwise from the file-loaded rule cache so the admin app can still open one read-only.
+admin.MapGet("/promotions/{code}", async (string code, CompanyRegistry reg, PromotionStore store, CancellationToken ct) =>
+{
+    if (reg.Master.Admin is { } a)
+        return await a.GetAsync(code, ct) is { } p ? Results.Ok(p) : Results.NotFound();
+    return store.All.FirstOrDefault(p => string.Equals(p.Code, code, StringComparison.OrdinalIgnoreCase)) is { } fp
+        ? Results.Ok(AdminPromotion.FromEngine(fp)) : Results.NotFound();
+});
 
 admin.MapPost("/promotions", async (AdminPromotion p, CompanyRegistry reg, PromotionStore store, CancellationToken ct) =>
 {
