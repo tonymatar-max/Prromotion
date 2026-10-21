@@ -34,6 +34,7 @@ It reloads rules every 60 s, or on `POST /api/v1/promotions/reload`.
 | `POST /api/v1/evaluate` | Basket in, adjusted lines out (FR-10) |
 | `POST /api/v1/simulate` | Draft promotions against a basket, with or without the active ones (FR-13) |
 | `POST /api/v1/hash` | Recompute the result hash for a set of lines (FR-45) |
+| `POST /api/v1/portal/orders/evaluate` | A sales channel that creates the B1 order itself (Cobalt Customer Portal, e-commerce): order in, discounted lines, free lines, totals and the exact Service Layer fields (including the hash) out. See [docs/portal-integration.md](docs/portal-integration.md) |
 | `GET /api/v1/promotions` | Rules currently in the cache |
 | `GET /health` | Liveness and rule count (no API key) |
 
