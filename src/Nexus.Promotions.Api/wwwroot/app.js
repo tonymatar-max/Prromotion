@@ -88,6 +88,7 @@ async function call(path, options = {}) {
   const res = await fetch(API + path, { headers: { "Content-Type": "application/json" }, ...options });
   const text = await res.text();
   const body = text ? JSON.parse(text) : null;
+  if (res.status === 401 && body?.signIn) { location.reload(); return new Promise(() => {}); }   // signed out meanwhile: the reload shows the sign-in
   if (!res.ok) {
     const errors = body?.errors ?? [body?.detail ?? body?.title ?? `HTTP ${res.status}`];
     throw Object.assign(new Error(errors.join(" ")), { errors });
@@ -130,6 +131,8 @@ async function route() {
   if (h === "new") return editor(null);
   if (h === "simulator") return simulator();
   if (h === "settings") return settings();
+  if (h === "users") return users();
+  if (h === "password") return passwordPage();
   if (h.startsWith("edit/")) return editor(h.slice(5));
   return list();
 }
@@ -628,8 +631,112 @@ async function simulator() {
   render();
 }
 
+// ── sign-in, users ─────────────────────────────────────────────────────
+let me = null;   // { username, role } once signed in; null when the server has sign-in switched off
+
+async function authCall(path, body, method = "POST") {
+  const res = await fetch("/api/auth" + path, { method, headers: { "Content-Type": "application/json" }, body: method === "GET" || method === "DELETE" ? undefined : JSON.stringify(body ?? {}) });
+  const text = await res.text();
+  const data = text ? JSON.parse(text) : null;
+  if (!res.ok) throw new Error((data?.errors ?? [`HTTP ${res.status}`]).join(" "));
+  return data;
+}
+
+function showSignIn(st) {
+  const first = st.setupRequired;
+  document.querySelector(".sidebar").hidden = true;
+  main.innerHTML = `<section class="panel signin"><h2>${first ? "Create the first administrator" : "Sign in"}</h2><div class="body">
+    ${first ? `<p class="hint">No one can sign in yet. Create the first administrator here, from a browser on the server itself (http://localhost:&lt;port&gt;).</p>` : ""}
+    <form id="signin">
+      <label>User name<input name="u" autocomplete="username" required></label>
+      <label>Password<input name="p" type="password" autocomplete="${first ? "new-password" : "current-password"}" ${first ? 'minlength="8"' : ""} required></label>
+      ${first ? `<p class="hint">At least 8 characters.</p>` : ""}
+      <div id="signin-msg"></div>
+      <div style="margin-top:12px"><button class="primary" type="submit">${first ? "Create and sign in" : "Sign in"}</button></div>
+    </form></div></section>`;
+  const f = main.querySelector("#signin");
+  f.u.focus();
+  f.addEventListener("submit", async e => {
+    e.preventDefault();
+    try { await authCall(first ? "/setup" : "/login", { username: f.u.value, password: f.p.value }); location.reload(); }
+    catch (err) { main.querySelector("#signin-msg").innerHTML = `<div class="alert error" style="margin-top:10px">${esc(err.message)}</div>`; }
+  });
+}
+
+function showUser() {
+  const chip = document.getElementById("user-chip");
+  chip.innerHTML = `${esc(me.username)} <span class="role">${esc(me.role)}</span> <button class="link" id="chg-pw">Password</button> <button class="link" id="sign-out">Sign out</button>`;
+  chip.hidden = false;
+  chip.querySelector("#chg-pw").addEventListener("click", () => { location.hash = "password"; });
+  chip.querySelector("#sign-out").addEventListener("click", async () => { try { await authCall("/logout"); } catch { /* signed out anyway */ } location.reload(); });
+  if (me.role === "Admin") document.querySelector('.nav-item[data-view="users"]').hidden = false;
+  else info.editable = false;   // a Viewer looks and simulates; the server refuses changes too
+}
+
+function passwordPage() {
+  setNav("");
+  main.innerHTML = `<div class="page-head"><h1>Change password</h1></div>
+    <section class="panel" style="max-width:420px"><div class="body"><form id="pw">
+      <label>Current password<input name="c" type="password" autocomplete="current-password" required></label>
+      <label style="display:block;margin-top:10px">New password<input name="n" type="password" autocomplete="new-password" minlength="8" required></label>
+      <label style="display:block;margin-top:10px">New password again<input name="r" type="password" autocomplete="new-password" required></label>
+      <div id="pw-msg"></div><div style="margin-top:12px"><button class="primary" type="submit">Change password</button></div>
+    </form></div></section>`;
+  const f = main.querySelector("#pw");
+  f.addEventListener("submit", async e => {
+    e.preventDefault();
+    const msg = main.querySelector("#pw-msg");
+    if (f.n.value !== f.r.value) { msg.innerHTML = `<div class="alert error" style="margin-top:10px">The two new passwords are not the same.</div>`; return; }
+    try { await authCall("/password", { current: f.c.value, password: f.n.value }); f.reset(); msg.innerHTML = `<div class="alert note" style="margin-top:10px">Password changed.</div>`; }
+    catch (err) { msg.innerHTML = `<div class="alert error" style="margin-top:10px">${esc(err.message)}</div>`; }
+  });
+}
+
+async function users() {
+  setNav("users");
+  main.innerHTML = `<div class="page-head"><h1>Users</h1></div><div class="panel"><div class="empty">Loading…</div></div>`;
+  let rows;
+  try { rows = await authCall("/users", null, "GET"); }
+  catch (e) { main.innerHTML = `<div class="alert error">Could not load users: ${esc(e.message)}</div>`; return; }
+  main.innerHTML = `<div class="page-head"><h1>Users</h1></div>
+    <section class="panel"><h2>Who can sign in<span class="sub">Admin changes anything; Viewer looks and uses the simulator</span></h2><div class="body">
+      <table class="table"><thead><tr><th>User name</th><th>Role</th><th></th></tr></thead><tbody>
+        ${rows.map(u => `<tr><td>${esc(u.username)}${u.username === me.username ? " (you)" : ""}</td><td>${esc(u.role)}</td>
+          <td style="text-align:right"><button class="link" data-pw="${esc(u.username)}">Set password</button> <button class="link" data-del="${esc(u.username)}">Remove</button></td></tr>`).join("")}
+      </tbody></table>
+      <h3 style="margin:16px 0 4px;font-size:13px">Add a user</h3>
+      <form id="add-user" style="display:flex;gap:8px;flex-wrap:wrap;align-items:end">
+        <label>User name<input name="u" autocomplete="off" required></label>
+        <label>Password<input name="p" type="password" autocomplete="new-password" minlength="8" required></label>
+        <label>Role<select name="r"><option>Viewer</option><option>Admin</option></select></label>
+        <button class="primary" type="submit">Add</button>
+      </form>
+      <div id="users-msg"></div>
+    </div></section>`;
+  const msg = text => { main.querySelector("#users-msg").innerHTML = `<div class="alert error" style="margin-top:10px">${esc(text)}</div>`; };
+  main.querySelector("#add-user").addEventListener("submit", async e => {
+    e.preventDefault();
+    const f = e.target;
+    try { await authCall("/users", { username: f.u.value, password: f.p.value, role: f.r.value }); users(); } catch (err) { msg(err.message); }
+  });
+  main.querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", async () => {
+    if (!confirm(`Remove ${b.dataset.del}?`)) return;
+    try { await authCall("/users/" + encodeURIComponent(b.dataset.del), null, "DELETE"); users(); } catch (err) { msg(err.message); }
+  }));
+  main.querySelectorAll("[data-pw]").forEach(b => b.addEventListener("click", async () => {
+    const pw = prompt(`New password for ${b.dataset.pw} (at least 8 characters):`);
+    if (!pw) return;
+    try { await authCall(`/users/${encodeURIComponent(b.dataset.pw)}/password`, { password: pw }); toast("Password changed."); } catch (err) { msg(err.message); }
+  }));
+}
+
 // ── start ────────────────────────────────────────────────────────────────
 (async () => {
+  try {
+    const st = await (await fetch("/api/auth/status")).json();
+    if (st.loginRequired && !st.authenticated) { showSignIn(st); return; }
+    me = st.loginRequired ? st.user : null;
+  } catch { /* an older server without sign-in: carry on as before */ }
   try {
     info = await call("/info");
     if (info.multiCompany) {
@@ -642,6 +749,7 @@ async function simulator() {
       c.hidden = false;
     }
   } catch { /* the list shows the error */ }
+  if (me) showUser();
   route();
 })();
 

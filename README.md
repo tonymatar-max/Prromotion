@@ -38,6 +38,20 @@ It reloads rules every 60 s, or on `POST /api/v1/promotions/reload`.
 | `GET /api/v1/promotions` | Rules currently in the cache |
 | `GET /health` | Liveness and rule count (no API key) |
 
+## Signing in to the admin app
+
+The admin app asks for a sign-in. The first time, open it in a browser **on the server itself** (`http://localhost:5190`) and create the first administrator; after that anyone can sign in from their own browser, but no one else can create the first account.
+
+| Role | Can |
+| --- | --- |
+| Admin | everything: create and change promotions, company settings, turn auto-apply on and off, manage users (Users page) |
+| Viewer | open promotions and use the simulator; cannot change anything |
+
+Users and the cookie key live in `data\` next to the exe (passwords are PBKDF2 hashes; five wrong passwords lock a user name for five minutes). Back that folder up with the server and never overwrite it when upgrading; `deploy\publish.ps1` leaves it alone.
+
+What the sign-in does **not** change: the engine endpoints (`/api/v1/evaluate`, `/documents/evaluate`, `/portal/orders/evaluate`, `/hash`, `/promotions`, `/health`) are for the add-on, the worker and other systems and keep working with `X-Api-Key` (when `Promotions:ApiKeys` is set). `GET /api/v1/admin/info` stays open for the add-on. A signed-in browser does not need the key for the admin app, and an API key does not open the admin app.
+`Admin:RequireLogin=false` switches the sign-in off (for a server only trusted staff can reach); `Admin:DataDir` moves the data folder.
+
 ## Running against B1
 
 Set the Service Layer password once for your Windows user (new terminals pick it up):

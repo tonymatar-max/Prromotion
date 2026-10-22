@@ -71,4 +71,5 @@ if ($Worker) {
 Start-Sleep -Seconds 3
 Get-Service -Name "$Name*" | Format-Table -AutoSize
 Write-Host "`nInstalled. Admin app: $($Urls -replace '0\.0\.0\.0','localhost')   Health: $($Urls -replace '0\.0\.0\.0','localhost')/health" -ForegroundColor Green
+Write-Host "First time: open $($Urls -replace '0\.0\.0\.0','localhost') in a browser ON THIS SERVER and create the first administrator (nobody else can)." -ForegroundColor Green
 Write-Host "Set Service Layer / company details in $Dest\appsettings.json (or the admin app Settings > Companies), then Restart-Service $Name." -ForegroundColor Green

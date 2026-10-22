@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Options;
 using Nexus.Promotions.Api;
 using Nexus.Promotions.B1;
@@ -10,6 +11,28 @@ builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true).AddE
 builder.Services.Configure<PromotionsOptions>(builder.Configuration.GetSection("Promotions"));
 builder.Services.Configure<ServiceLayerOptions>(builder.Configuration.GetSection("ServiceLayer"));
 builder.Services.ConfigureHttpJsonOptions(o => Json.Configure(o.SerializerOptions));
+
+// Sign-in for the admin app (AdminAuth.cs). The engine endpoints keep X-Api-Key; this protects what the browser uses.
+// Admin:RequireLogin=false switches it off (tests, or a server only trusted staff can reach). Users and keys live in data\ next to the exe.
+var requireLogin = builder.Configuration.GetValue("Admin:RequireLogin", true);
+var dataDir = builder.Configuration["Admin:DataDir"] ?? Path.Combine(builder.Environment.ContentRootPath, "data");
+Directory.CreateDirectory(dataDir);
+// Pin the application name so the sign-in cookie key survives moving or renaming the folder; keys are DPAPI-protected (machine scope).
+var dataProtection = builder.Services.AddDataProtection().SetApplicationName("CobaltB1Promotion")
+    .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(dataDir, "keys")));
+if (OperatingSystem.IsWindows()) dataProtection.ProtectKeysWithDpapi(protectToLocalMachine: true);
+builder.Services.AddSingleton(new UserStore(dataDir));
+builder.Services.AddAuthentication(AdminAuth.Scheme).AddCookie(o =>
+{
+    o.Cookie.Name = "cobalt_promo_auth";
+    o.Cookie.HttpOnly = true;
+    o.Cookie.SameSite = SameSiteMode.Strict;
+    o.ExpireTimeSpan = TimeSpan.FromHours(12);
+    o.SlidingExpiration = true;
+    o.Events.OnRedirectToLogin = c => { c.Response.StatusCode = StatusCodes.Status401Unauthorized; return Task.CompletedTask; };
+    o.Events.OnRedirectToAccessDenied = c => { c.Response.StatusCode = StatusCodes.Status403Forbidden; return Task.CompletedTask; };
+});
+builder.Services.AddAuthorizationBuilder().AddPolicy("Admin", p => p.RequireRole(Roles.Admin));
 
 var promotionsOptions = builder.Configuration.GetSection("Promotions").Get<PromotionsOptions>() ?? new PromotionsOptions();
 
@@ -75,11 +98,15 @@ if (registry.Master.Admin is { } promotionAdmin)
     });
 }
 
-// API key check for everything under /api (NFR-05). Health stays open for monitoring.
+app.UseAuthentication();
+
+// API key check for everything under /api (NFR-05). Health stays open for monitoring. Signing in is not an API key: /api/auth is open, and a signed-in
+// browser may use the admin API without one (the admin API then checks the sign-in itself, see AdminAuth.Gate).
 app.Use(async (ctx, next) =>
 {
     var keys = ctx.RequestServices.GetRequiredService<IOptions<PromotionsOptions>>().Value.ApiKeys;
-    if (keys.Length > 0 && ctx.Request.Path.StartsWithSegments("/api")
+    var signedInAdminCall = ctx.User.Identity?.IsAuthenticated == true && ctx.Request.Path.StartsWithSegments("/api/v1/admin");
+    if (keys.Length > 0 && ctx.Request.Path.StartsWithSegments("/api") && !ctx.Request.Path.StartsWithSegments("/api/auth") && !signedInAdminCall
         && !(ctx.Request.Headers.TryGetValue("X-Api-Key", out var key) && keys.Contains(key.ToString())))
     {
         ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
@@ -108,6 +135,8 @@ app.Use(async (ctx, next) =>
 // The promotions admin app (wwwroot): list, edit and simulate promotions stored in the @APE_PROMO UDO.
 app.UseDefaultFiles();
 app.UseStaticFiles();
+app.UseAuthorization();
+app.MapAuth(requireLogin);
 
 app.MapGet("/health", (PromotionStore store) =>
     Results.Ok(new { status = "ok", promotions = store.Current.Promotions.Count, loadedAt = store.Current.LoadedAt }));
@@ -179,6 +208,7 @@ api.MapPost("/promotions/reload", async (PromotionStore store, CancellationToken
 
 // ── Admin app API: reads and writes @APE_PROMO in the MASTER company through its Service Layer (Promotions:Source = ServiceLayer) ──
 var admin = api.MapGroup("/admin");
+admin.AddEndpointFilter(AdminAuth.Gate(requireLogin));
 
 admin.MapGet("/info", (HttpContext ctx, IOptions<PromotionsOptions> o, CompanyRegistry reg) =>
 {
