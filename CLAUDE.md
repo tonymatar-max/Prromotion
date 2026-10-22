@@ -6,7 +6,7 @@ Portal/e-commerce contract: `docs/portal-integration.md`.
 
 ## Where things are
 - Local: `C:\Claude\Promotion` (git, branch `main`, remote `https://github.com/tonymatar-max/Prromotion.git`; the repo name has two r's).
-- Pushed to GitHub: up to `ebbe177` (everything through the MixAndMatch fix, README, docs, this file). **Local only: the admin sign-in commit.** Push when Tony says so.
+- Pushed to GitHub: up to `ebbe177` (everything through the MixAndMatch fix, README, docs, this file). **Local only: the admin sign-in commit and the ledger design.** Push when Tony says so.
 - Projects (.NET 8, namespaces stay `Nexus.Promotions.*`): `Engine`, `B1` (Service Layer, UDO mapping, `PromotionStore`, `PortalOrder`), `Api` (REST + admin app in `wwwroot/app.js`), `Worker` (Mode B), `AddOn` (Mode A, net48 x64), `Setup` (UDT/UDF/UDO + SQL installer). Tests in `tests/` (all pass: Api 20, B1 18, Engine 28, Sql 20).
 - Run: `dotnet run --project src/Nexus.Promotions.Api` -> http://localhost:5190. Default `Promotions:Source = File` (reads `samples/promotions.json`), so the admin app is read-only.
 
