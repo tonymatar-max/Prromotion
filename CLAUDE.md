@@ -6,7 +6,7 @@ Portal/e-commerce contract: `docs/portal-integration.md`.
 
 ## Where things are
 - Local: `C:\Claude\Promotion` (git, branch `main`, remote `https://github.com/tonymatar-max/Prromotion.git`; the repo name has two r's).
-- Pushed to GitHub: only up to `c12a7c0` (the NIVEA15 fix). **Later commits are local only** (rebrand + deploy scripts, test isolation, portal API, MixAndMatch fix, README, docs). Push when Tony says so.
+- Pushed to GitHub: up to `ebbe177` (everything through the MixAndMatch fix, README, docs, this file). **Local only: the admin sign-in commit.** Push when Tony says so.
 - Projects (.NET 8, namespaces stay `Nexus.Promotions.*`): `Engine`, `B1` (Service Layer, UDO mapping, `PromotionStore`, `PortalOrder`), `Api` (REST + admin app in `wwwroot/app.js`), `Worker` (Mode B), `AddOn` (Mode A, net48 x64), `Setup` (UDT/UDF/UDO + SQL installer). Tests in `tests/` (all pass: Api 20, B1 18, Engine 28, Sql 20).
 - Run: `dotnet run --project src/Nexus.Promotions.Api` -> http://localhost:5190. Default `Promotions:Source = File` (reads `samples/promotions.json`), so the admin app is read-only.
 
@@ -22,15 +22,18 @@ Portal/e-commerce contract: `docs/portal-integration.md`.
 - Repo cleanup: nothing needed (`backups/`, `dist/`, logs already gitignored).
 
 ## Customer Portal wiring (other repo)
-`C:\Claude\Cobalt Customer Portal`, branch **`promotions-integration`** (not merged, not pushed). Settings > Promotions tab (EN/AR), `PromotionsClient`, `OrderService.PostAsync` applies promotions at SAP posting time (skips accepted quotes, never blocks the order if the server fails, writes `order.promotions*` to the audit trail), `tests/section-promotions.sh` + `tests/fake_promo.py`. Run only that section: `ONLY=promotions bash tests/e2e.sh`. See that repo's notes for status.
-Design choices to confirm with Tony: lines carry the portal's price (the one the customer saw) when promotions apply; cart preview of discounts is not built (only applied at posting); fail-open when the promotion server is down.
+
+`C:\Claude\Cobalt Customer Portal`, remote `tonymatar-max/customerPortal`. **Merged to `main` and pushed** (`44ca4f5`): Settings > Promotions tab (EN/AR), `PromotionsClient`, `OrderService.PostAsync` applies promotions at SAP posting time (skips accepted quotes, never blocks the order if the server fails, audits `order.promotions*`), `tests/section-promotions.sh` + `tests/fake_promo.py` + a captured real response (`tests/fixtures/promo-real-response.json`).
+**Branch `cart-promotions-preview` (local, not merged, not pushed)**: the cart shows the promotions the order would get (`POST /api/portal/promotions-preview`, informational, hidden when unavailable). Verified by the e2e section only; the cart screen itself was not looked at in a browser.
+Run only that section: `ONLY=promotions bash tests/e2e.sh` (about 2 minutes). The full suite takes about 18 minutes and its date tests fail between local midnight and 03:00 (it compares the local date with the portal's UTC date), so run it in the daytime.
+Design choices to confirm with Tony: lines carry the portal's price (the one the customer saw) when promotions apply; fail-open when the promotion server is down; near-miss hints are the server's English text.
 
 ## Not done (needs input)
 - **HANA version of the SQL**: cannot be verified without a HANA system; validation runs inside the customer's SAP DB, so do not ship untested.
-- **Usage ledger (`@APE_LEDGER`) and budget consumption**: design first (when is budget used, does a cancelled order give it back, per promotion vs campaign).
+- **Usage ledger and budget consumption**: designed in `docs/ledger-design.md`, not built. Four decisions are needed from Tony (soft vs hard limit, which documents consume, cancelled orders give budget back, campaign budgets). `U_BudgetUsed` is never updated today, so budgets are effectively unlimited.
 - **Engine limits**: exclusive quantity/basket promotions only see untouched lines (no cross-phase best deal); no currency conversion.
 - **Rename the GitHub repo** (`Prromotion` typo): needs the new name; GitHub redirects the old URL.
-- In-app Settings + login for the service (see deviations above).
+- In-app Settings screen for the service (SQL / Service Layer fields with Test buttons, per the standard). The login is done.
 
 ## Gotchas
 - A running API locks its DLLs: stop it before `dotnet build` (kill by port, never by image name).
