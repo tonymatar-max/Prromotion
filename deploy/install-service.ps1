@@ -4,8 +4,8 @@
 
 .PARAMETER Dest     Published folder from publish.ps1. Default C:\CobaltB1Promotion
 .PARAMETER Name     Service name. Default CobaltB1Promotion  (display name: "Cobalt B1 Promotion")
-.PARAMETER Urls     Where to listen. Default http://0.0.0.0:5190 because the B1 add-ons on every workstation call this server;
-                    use http://localhost:5190 if it is only reached through a reverse proxy. Open the firewall port yourself.
+.PARAMETER Urls     Where to listen. Default http://0.0.0.0:5240 because the B1 add-ons on every workstation call this server;
+                    use http://localhost:5240 if it is only reached through a reverse proxy. Open the firewall port yourself.
 .PARAMETER Worker   Also install the Mode B worker as "<Name> Worker".
 .PARAMETER ServiceLayerPassword
                     Stored machine-wide in APE_ServiceLayer__Password (the services read it at start). Omit if already set.
@@ -18,7 +18,7 @@ param(
   [string]$Dest    = "C:\CobaltB1Promotion",
   [string]$Name    = "CobaltB1Promotion",
   [string]$Display = "Cobalt B1 Promotion",
-  [string]$Urls    = "http://0.0.0.0:5190",
+  [string]$Urls    = "http://0.0.0.0:5240",
   [switch]$Worker,
   [string]$ServiceLayerPassword,
   [string]$Account = "LocalSystem",
