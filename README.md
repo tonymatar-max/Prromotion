@@ -17,7 +17,6 @@ the queue worker (Mode B, after save), POS and e-commerce. Requirements: the PRD
 | `sql/mssql` | Done: queue and settings tables, hash, validation (TransactionNotification), Mode B enqueue (PostTransactionNotice) |
 | `src/Nexus.Promotions.Setup` | Done: creates UDTs/UDFs/UDOs through the Service Layer, installs the SQL, hooks the notification procedures; installed and verified on SBODemoHO |
 | HANA version of the SQL | Next |
-| Usage ledger (`@APE_LEDGER`) and budget consumption | Next |
 
 ## Run
 
@@ -198,7 +197,7 @@ table stubs) on `APE_SQL_SERVER` (default `localhost`), and skips when no SQL Se
 
 ## How the engine works
 
-1. **Eligibility**: dates, weekdays, happy hour, channel, customer, group, branch, price list, coupon, budget.
+1. **Eligibility**: dates, weekdays, happy hour, channel, customer, group, branch, price list, coupon.
 2. **Phase 1, unit price** (P01, P02, P03): per line, each exclusive promotion competes with the stack of
    stackable ones. `ConflictMode` picks the best deal for the customer, or the highest priority.
    `StackingMode` compounds or adds the stacked percentages.
@@ -219,3 +218,4 @@ Performance: 500 lines against 500 active promotions takes about 130 ms in Relea
 - An exclusive quantity or basket promotion only sees lines no earlier-phase promotion touched. There is no
   "best deal" comparison across phases yet.
 - Promotion amounts are in document currency; there is no conversion yet.
+- There is no promotion budget (a total a promotion may give away over its life). The engine would honour `U_Budget` if it were set, but nothing counts what has been given, so the admin app does not offer the field. Use the end date and "Max discount per document" instead.

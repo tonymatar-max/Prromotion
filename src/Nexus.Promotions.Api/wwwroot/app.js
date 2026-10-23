@@ -383,8 +383,6 @@ function renderEditor(s, lk) {
       <label class="field"><span>Coupon code required</span><input data-k="coupon" value="${esc(p.coupon)}" ${dis} placeholder="none"></label>
       <label class="field"><span>Max times per document</span><input type="number" min="0" data-k="maxApps" value="${p.maxApps ?? ""}" ${dis} placeholder="no limit"></label>
       <label class="field"><span>Max discount per document</span><input type="number" min="0" step="any" data-k="maxDisc" value="${p.maxDisc || ""}" ${dis} placeholder="no limit"></label>
-      <label class="field"><span>Budget</span><input type="number" min="0" step="any" data-k="budget" value="${p.budget || ""}" ${dis} placeholder="no budget"></label>
-      <label class="field"><span>Budget used</span><input value="${money(p.budgetUsed)}" disabled></label>
       <label class="check" style="align-self:end;padding-bottom:6px"><input type="checkbox" data-k="allowBelow" ${p.allowBelow ? "checked" : ""} ${dis}> Allow below minimum price</label>
     </div></section>
 

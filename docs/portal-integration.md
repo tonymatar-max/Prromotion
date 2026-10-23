@@ -77,7 +77,7 @@ Build the normal `POST /Orders` body (CardCode, DocDueDate, NumAtCard, ShipToCod
 
 Why exactly: SAP recomputes the hash from the item, quantity, unit price, discount amount, promotion codes and free flag of
 every line (`U_APE_Hash`). A changed value, a missing free line, or lines evaluated before the cart changed gives error
-**71002**. Evaluate again whenever the cart changes, and again right before posting (promotions can expire, budgets run out).
+**71002**. Evaluate again whenever the cart changes, and again right before posting (promotions can expire or be paused).
 Other SAP checks that can refuse the order: 71003 (free line without 100% discount), 71004 (`DiscountPercent` does not give
 `U_APE_DiscAmt`), 71005 (unknown promotion), 71006 (copied line differs from its base line).
 

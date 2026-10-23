@@ -6,7 +6,7 @@ Portal/e-commerce contract: `docs/portal-integration.md`.
 
 ## Where things are
 - Local: `C:\Claude\Promotion` (git, branch `main`, remote `https://github.com/tonymatar-max/Prromotion.git`; the repo name has two r's).
-- Pushed to GitHub: everything, up to `60ce275` (admin sign-in and ledger design included).
+- Pushed to GitHub: everything up to the admin sign-in. Check `git status` and `git log origin/main..` for anything newer.
 - Projects (.NET 8, namespaces stay `Nexus.Promotions.*`): `Engine`, `B1` (Service Layer, UDO mapping, `PromotionStore`, `PortalOrder`), `Api` (REST + admin app in `wwwroot/app.js`), `Worker` (Mode B), `AddOn` (Mode A, net48 x64), `Setup` (UDT/UDF/UDO + SQL installer). Tests in `tests/` (all pass: Api 20, B1 18, Engine 28, Sql 20).
 - Run: `dotnet run --project src/Nexus.Promotions.Api` -> http://localhost:5190. Default `Promotions:Source = File` (reads `samples/promotions.json`), so the admin app is read-only.
 
@@ -30,7 +30,7 @@ Design choices to confirm with Tony: lines carry the portal's price (the one the
 
 ## Not done (needs input)
 - **HANA version of the SQL**: cannot be verified without a HANA system; validation runs inside the customer's SAP DB, so do not ship untested.
-- **Usage ledger and budget consumption**: designed in `docs/ledger-design.md`, not built. Four decisions are needed from Tony (soft vs hard limit, which documents consume, cancelled orders give budget back, campaign budgets). `U_BudgetUsed` is never updated today, so budgets are effectively unlimited.
+- **Budgets: decided not needed (2026-10-23).** Tony does not need budgets now. The admin app no longer shows the Budget fields; the engine and the SAP fields (`U_Budget`, `U_BudgetUsed`) are untouched and nothing counts usage. Build a ledger only if Tony asks for budgets later.
 - **Engine limits**: exclusive quantity/basket promotions only see untouched lines (no cross-phase best deal); no currency conversion.
 - **Rename the GitHub repo** (`Prromotion` typo): needs the new name; GitHub redirects the old URL.
 - In-app Settings screen for the service (SQL / Service Layer fields with Test buttons, per the standard). The login is done.
