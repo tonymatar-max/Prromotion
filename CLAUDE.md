@@ -6,7 +6,7 @@ Portal/e-commerce contract: `docs/portal-integration.md`.
 
 ## Where things are
 - Local: `C:\Claude\Promotion` (git, branch `main`, remote `https://github.com/tonymatar-max/Prromotion.git`; the repo name has two r's).
-- Pushed to GitHub: up to `ebbe177` (everything through the MixAndMatch fix, README, docs, this file). **Local only: the admin sign-in commit and the ledger design.** Push when Tony says so.
+- Pushed to GitHub: everything, up to `60ce275` (admin sign-in and ledger design included).
 - Projects (.NET 8, namespaces stay `Nexus.Promotions.*`): `Engine`, `B1` (Service Layer, UDO mapping, `PromotionStore`, `PortalOrder`), `Api` (REST + admin app in `wwwroot/app.js`), `Worker` (Mode B), `AddOn` (Mode A, net48 x64), `Setup` (UDT/UDF/UDO + SQL installer). Tests in `tests/` (all pass: Api 20, B1 18, Engine 28, Sql 20).
 - Run: `dotnet run --project src/Nexus.Promotions.Api` -> http://localhost:5190. Default `Promotions:Source = File` (reads `samples/promotions.json`), so the admin app is read-only.
 
@@ -24,7 +24,7 @@ Portal/e-commerce contract: `docs/portal-integration.md`.
 ## Customer Portal wiring (other repo)
 
 `C:\Claude\Cobalt Customer Portal`, remote `tonymatar-max/customerPortal`. **Merged to `main` and pushed** (`44ca4f5`): Settings > Promotions tab (EN/AR), `PromotionsClient`, `OrderService.PostAsync` applies promotions at SAP posting time (skips accepted quotes, never blocks the order if the server fails, audits `order.promotions*`), `tests/section-promotions.sh` + `tests/fake_promo.py` + a captured real response (`tests/fixtures/promo-real-response.json`).
-**Branch `cart-promotions-preview` (local, not merged, not pushed)**: the cart shows the promotions the order would get (`POST /api/portal/promotions-preview`, informational, hidden when unavailable). Verified by the e2e section only; the cart screen itself was not looked at in a browser.
+**Cart preview, merged and pushed to `main` (`51da507`)**: the cart shows the promotions the order would get (`POST /api/portal/promotions-preview`, informational, hidden when unavailable). Verified by the e2e section only; the cart screen itself was not looked at in a browser.
 Run only that section: `ONLY=promotions bash tests/e2e.sh` (about 2 minutes). The full suite takes about 18 minutes and its date tests fail between local midnight and 03:00 (it compares the local date with the portal's UTC date), so run it in the daytime.
 Design choices to confirm with Tony: lines carry the portal's price (the one the customer saw) when promotions apply; fail-open when the promotion server is down; near-miss hints are the server's English text.
 
